@@ -1,0 +1,23 @@
+{
+  "embedding": {
+    "provider": "gemini",
+    "model": "text-embedding-004",
+    "dimensions": 768,
+    "batchSize": 100,
+    "rateLimitDelayMs": 100
+  },
+  "db": {
+    "path": "./data/conversations.db"
+  },
+  "search": {
+    "defaultLimit": 20,
+    "contextWindow": {
+      "before": 2,
+      "after": 1
+    }
+  },
+  "ingestion": {
+    "batchSize": 50,
+    "progressLogging": true
+  }
+}

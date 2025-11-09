@@ -1,0 +1,24 @@
+{
+  "embedding": {
+    "provider": "gemini",
+    "apiKey": "test-api-key",
+    "model": "text-embedding-004",
+    "dimensions": 768,
+    "batchSize": 100,
+    "rateLimitDelayMs": 100
+  },
+  "db": {
+    "path": "./tests/tmp/test.db"
+  },
+  "search": {
+    "defaultLimit": 20,
+    "contextWindow": {
+      "before": 2,
+      "after": 1
+    }
+  },
+  "ingestion": {
+    "batchSize": 50,
+    "progressLogging": false
+  }
+}
