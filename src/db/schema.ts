@@ -64,27 +64,64 @@ CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_uuid);
 
 export const CREATE_LEARNINGS_TABLE = `
 CREATE TABLE IF NOT EXISTS learnings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  learning_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  category TEXT,
-  confidence_score REAL,
   created_at DATETIME NOT NULL,
   updated_at DATETIME,
   embedding BLOB
 );
 `
 
+export const CREATE_LEARNINGS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_learnings_created ON learnings(created_at);
+`
+
+export const CREATE_LEARNING_CATEGORIES_TABLE = `
+CREATE TABLE IF NOT EXISTS learning_categories (
+  category_id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  created_at DATETIME NOT NULL
+);
+`
+
+export const CREATE_LEARNING_CATEGORIES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_learning_categories_name ON learning_categories(name);
+`
+
+export const CREATE_LEARNING_CATEGORY_ASSIGNMENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS learning_category_assignments (
+  learning_id TEXT NOT NULL,
+  category_id TEXT NOT NULL,
+  assigned_at DATETIME NOT NULL DEFAULT (datetime('now')),
+
+  PRIMARY KEY (learning_id, category_id),
+  FOREIGN KEY (learning_id) REFERENCES learnings(learning_id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES learning_categories(category_id) ON DELETE CASCADE
+);
+`
+
+export const CREATE_LEARNING_CATEGORY_ASSIGNMENTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_lca_learning ON learning_category_assignments(learning_id);
+CREATE INDEX IF NOT EXISTS idx_lca_category ON learning_category_assignments(category_id);
+`
+
 export const CREATE_LEARNING_SOURCES_TABLE = `
 CREATE TABLE IF NOT EXISTS learning_sources (
-  learning_id INTEGER NOT NULL,
+  learning_id TEXT NOT NULL,
   conversation_uuid TEXT,
   message_uuid TEXT,
 
-  FOREIGN KEY (learning_id) REFERENCES learnings(id) ON DELETE CASCADE,
+  FOREIGN KEY (learning_id) REFERENCES learnings(learning_id) ON DELETE CASCADE,
   FOREIGN KEY (conversation_uuid) REFERENCES conversations(uuid) ON DELETE CASCADE,
   FOREIGN KEY (message_uuid) REFERENCES messages(uuid) ON DELETE CASCADE
 );
+`
+
+export const CREATE_LEARNING_SOURCES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_learning_sources_learning ON learning_sources(learning_id);
+CREATE INDEX IF NOT EXISTS idx_learning_sources_conv ON learning_sources(conversation_uuid);
 `
 
 export const CREATE_CONVERSATIONS_FTS = `
@@ -149,8 +186,16 @@ export function initializeSchema(db: Database.Database): void {
   db.exec(CREATE_MESSAGES_INDEXES)
   db.exec(CREATE_MESSAGE_CHUNKS_TABLE)
   db.exec(CREATE_MESSAGE_CHUNKS_INDEXES)
+
+  // Learning tables
   db.exec(CREATE_LEARNINGS_TABLE)
+  db.exec(CREATE_LEARNINGS_INDEXES)
+  db.exec(CREATE_LEARNING_CATEGORIES_TABLE)
+  db.exec(CREATE_LEARNING_CATEGORIES_INDEXES)
+  db.exec(CREATE_LEARNING_CATEGORY_ASSIGNMENTS_TABLE)
+  db.exec(CREATE_LEARNING_CATEGORY_ASSIGNMENTS_INDEXES)
   db.exec(CREATE_LEARNING_SOURCES_TABLE)
+  db.exec(CREATE_LEARNING_SOURCES_INDEXES)
 
   // Create FTS tables
   db.exec(CREATE_CONVERSATIONS_FTS)

@@ -1,10 +1,10 @@
-import { VectorStore, VectorSearchResult } from '../../src/core/types'
+import { VectorStoreExtended, VectorSearchResult } from '../../src/core/types'
 
 /**
  * Mock vector store for testing.
  * Uses in-memory Map for storage and simple cosine similarity for search.
  */
-export class MockVectorStore implements VectorStore {
+export class MockVectorStore implements VectorStoreExtended {
   private dimensions: number | null = null
   private vectors = new Map<string, Float32Array>()
 
@@ -52,6 +52,17 @@ export class MockVectorStore implements VectorStore {
       .slice(0, limit)
   }
 
+  searchTable(
+    tableName: string,
+    idColumn: string,
+    query: Float32Array,
+    limit: number
+  ): VectorSearchResult[] {
+    // In the mock, we don't distinguish between tables
+    // Just delegate to regular search
+    return this.search(query, limit)
+  }
+
   private cosineSimilarity(a: Float32Array, b: Float32Array): number {
     let dotProduct = 0
     let normA = 0
@@ -73,5 +84,9 @@ export class MockVectorStore implements VectorStore {
 
   size(): number {
     return this.vectors.size
+  }
+
+  get data(): Map<string, Float32Array> {
+    return this.vectors
   }
 }

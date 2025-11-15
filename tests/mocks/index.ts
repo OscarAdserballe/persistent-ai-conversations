@@ -4,3 +4,4 @@
 
 export { MockEmbeddingModel } from './embedding-model'
 export { MockVectorStore } from './vector-store'
+export { MockLLMModel, createMockLearningResponse } from './llm-model'

@@ -71,9 +71,50 @@ export interface VectorStore {
 }
 
 export interface VectorSearchResult {
-  id: string          // Message UUID
+  id: string          // Entity ID (message UUID, learning ID, etc.)
   score: number       // Similarity score (0-1, higher = more similar)
   distance: number    // Vector distance
+}
+
+/**
+ * Search a specific table for similar vectors.
+ * Added for learning extraction feature.
+ * @param tableName - Table to search ('message_chunks' or 'learnings')
+ * @param idColumn - ID column name ('message_uuid' or 'learning_id')
+ * @param query - Query vector
+ * @param limit - Maximum results
+ */
+export interface VectorStoreExtended extends VectorStore {
+  searchTable(
+    tableName: string,
+    idColumn: string,
+    query: Float32Array,
+    limit: number
+  ): VectorSearchResult[]
+}
+
+// ============================================================================
+// LLM Model
+// ============================================================================
+
+/**
+ * Interface for text generation using LLM APIs.
+ * Used for learning extraction (not embeddings).
+ * Implementations: GeminiFlash, (future: GPT4oMini, ClaudeHaiku)
+ */
+export interface LLMModel {
+  /**
+   * Generate text based on a prompt.
+   * @param prompt - The instruction prompt
+   * @param context - Optional context (e.g., full conversation)
+   * @returns Generated text (typically JSON)
+   */
+  generateText(prompt: string, context?: string): Promise<string>
+
+  /**
+   * Model identifier (e.g., "gemini-1.5-flash")
+   */
+  readonly model: string
 }
 
 // ============================================================================
@@ -144,6 +185,84 @@ export interface SearchOptions {
 }
 
 // ============================================================================
+// Learning Extraction
+// ============================================================================
+
+/**
+ * Extracts distilled learnings from conversations using LLM.
+ * Stores learnings with embeddings and source references.
+ */
+export interface LearningExtractor {
+  /**
+   * Extract learnings from a single conversation.
+   * @param conversation - Full conversation with messages
+   * @returns Array of extracted learnings (empty if none found)
+   */
+  extractFromConversation(conversation: Conversation): Promise<Learning[]>
+}
+
+/**
+ * A distilled learning extracted from conversations.
+ */
+export interface Learning {
+  learningId: string             // Unique learning ID (UUID)
+  title: string                  // Brief title (max 100 chars)
+  content: string                // Detailed explanation (2-3 sentences)
+  categories: Category[]         // Dynamic categories (many-to-many)
+  createdAt: Date
+  sources: LearningSource[]      // Link to source conversations/messages
+}
+
+export interface LearningSource {
+  conversationUuid: string
+  messageUuids?: string[]        // Specific messages if identifiable
+}
+
+/**
+ * Dynamic category - user-defined and evolvable.
+ */
+export interface Category {
+  categoryId: string             // Category ID (UUID)
+  name: string                   // Category name (e.g., "software-architecture")
+  description?: string           // Optional description
+  createdAt: Date
+}
+
+/**
+ * Semantic search over learnings.
+ * Uses VectorStore for core search, enriches with domain-specific data.
+ */
+export interface LearningSearch {
+  /**
+   * Search for learnings matching a query.
+   * @param query - Natural language search query
+   * @param options - Search options (optional)
+   * @returns Array of search results with source context
+   */
+  search(query: string, options?: LearningSearchOptions): Promise<LearningSearchResult[]>
+}
+
+export interface LearningSearchOptions {
+  limit?: number                 // Default: 20
+  dateRange?: {                  // Filter by learning creation date
+    start: Date
+    end: Date
+  }
+  categoryIds?: string[]         // Filter by category IDs
+  categoryNames?: string[]       // Filter by category names
+}
+
+export interface LearningSearchResult {
+  learning: Learning             // The matched learning
+  score: number                  // Similarity score (0-1)
+  sourceConversations: {         // Source conversation metadata
+    uuid: string
+    title: string
+    createdAt: Date
+  }[]
+}
+
+// ============================================================================
 // Data Structures
 // ============================================================================
 
@@ -202,6 +321,7 @@ export interface SearchResult {
 
 export interface Config {
   embedding: EmbeddingConfig
+  llm: LLMConfig
   db: DatabaseConfig
   search: SearchConfig
   ingestion: IngestionConfig
@@ -214,6 +334,15 @@ export interface EmbeddingConfig {
   dimensions: number
   batchSize?: number
   rateLimitDelayMs?: number
+}
+
+export interface LLMConfig {
+  provider: 'gemini' | 'openai' | 'anthropic'
+  apiKey: string
+  model: string
+  temperature?: number
+  maxTokens?: number
+  rateLimitDelayMs?: number     // Delay between LLM calls (default: 1000ms)
 }
 
 export interface DatabaseConfig {

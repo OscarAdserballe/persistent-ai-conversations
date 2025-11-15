@@ -9,6 +9,8 @@
     "dev": "tsc --watch",
     "ingest": "tsx src/cli/ingest.ts",
     "search": "tsx src/cli/search.ts",
+    "extract-learnings": "tsx src/cli/extract-learnings.ts",
+    "search-learnings": "tsx src/cli/search-learnings.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",

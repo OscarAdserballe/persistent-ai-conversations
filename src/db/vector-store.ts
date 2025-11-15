@@ -1,12 +1,13 @@
 import Database from 'better-sqlite3'
-import { VectorStore, VectorSearchResult } from '../core/types'
+import { VectorStore, VectorSearchResult, VectorStoreExtended } from '../core/types'
 
 /**
  * SQLite + vector similarity implementation of VectorStore.
  * Searches message_chunks table and aggregates results by message UUID.
+ * Also supports searching learnings table via searchTable method.
  * Stores embeddings as BLOBs and performs cosine similarity search in-memory.
  */
-export class SqliteVectorStore implements VectorStore {
+export class SqliteVectorStore implements VectorStoreExtended {
   private dimensions: number | null = null
 
   constructor(private db: Database.Database) {}
@@ -87,6 +88,55 @@ export class SqliteVectorStore implements VectorStore {
       score,
       distance: 1 - score
     }))
+
+    // Sort by score (descending) and limit
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+  }
+
+  /**
+   * Search a specific table for similar vectors.
+   * Generic method that works with any table containing embeddings.
+   * @param tableName - Table to search ('message_chunks' or 'learnings')
+   * @param idColumn - ID column name ('message_uuid' or 'learning_id')
+   * @param query - Query vector
+   * @param limit - Maximum results
+   */
+  searchTable(tableName: string, idColumn: string, query: Float32Array, limit: number): VectorSearchResult[] {
+    if (this.dimensions === null) {
+      throw new Error('VectorStore not initialized. Call initialize() first.')
+    }
+
+    if (query.length !== this.dimensions) {
+      throw new Error(
+        `Query vector dimension mismatch: expected ${this.dimensions}, got ${query.length}`
+      )
+    }
+
+    // Fetch all rows with embeddings from specified table
+    const stmt = this.db.prepare(
+      `SELECT ${idColumn} as id, embedding FROM ${tableName} WHERE embedding IS NOT NULL`
+    )
+    const rows = stmt.all() as Array<{ id: string; embedding: Buffer }>
+
+    if (rows.length === 0) {
+      return []
+    }
+
+    // Compute cosine similarity for each row
+    const results: VectorSearchResult[] = []
+
+    for (const row of rows) {
+      const vector = new Float32Array(row.embedding.buffer)
+      const score = this.cosineSimilarity(query, vector)
+
+      results.push({
+        id: row.id,
+        score,
+        distance: 1 - score
+      })
+    }
 
     // Sort by score (descending) and limit
     return results

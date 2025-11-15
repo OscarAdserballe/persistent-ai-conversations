@@ -6,6 +6,13 @@
     "batchSize": 100,
     "rateLimitDelayMs": 100
   },
+  "llm": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash-lite",
+    "temperature": 0.5,
+    "maxTokens": 2000,
+    "rateLimitDelayMs": 1000
+  },
   "db": {
     "path": "./data/conversations.db"
   },
