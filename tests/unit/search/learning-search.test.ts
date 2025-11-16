@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import Database from 'better-sqlite3'
+import { createDatabase } from '../../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../../src/db/client'
 import { LearningSearchImpl } from '../../../src/services/learning-search'
 import { MockEmbeddingModel, MockVectorStore } from '../../../src/mocks'
-import { initializeSchema } from '../../../src/db/schema'
 import { unlinkSync } from 'fs'
 import { resolve } from 'path'
 
 describe('LearningSearchImpl', () => {
-  let db: Database.Database
+  let drizzleDb: DrizzleDB
   let embedder: MockEmbeddingModel
   let vectorStore: MockVectorStore
   let search: LearningSearchImpl
@@ -15,11 +15,10 @@ describe('LearningSearchImpl', () => {
 
   beforeEach(() => {
     // Create fresh database
-    db = new Database(dbPath)
-    initializeSchema(db)
+    drizzleDb = createDatabase(dbPath)
 
     // Insert test conversations
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, summary, created_at, updated_at, platform)
       VALUES
         ('conv-1', 'TypeScript Discussion', 'About TypeScript', '2025-01-01', '2025-01-01', 'claude'),
@@ -76,7 +75,7 @@ describe('LearningSearchImpl', () => {
       createLearningData('learn-5', 'TypeScript Interfaces', ['typescript'], 'conv-1', '2025-01-05')
     ]
 
-    const insertStmt = db.prepare(`
+    const insertStmt = getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -104,11 +103,11 @@ describe('LearningSearchImpl', () => {
     }
 
     // Create search engine
-    search = new LearningSearchImpl(embedder, vectorStore, db)
+    search = new LearningSearchImpl(embedder, vectorStore, drizzleDb)
   })
 
   afterEach(() => {
-    db.close()
+    getRawDb(drizzleDb).close()
     try {
       unlinkSync(dbPath)
     } catch (e) {
@@ -450,7 +449,7 @@ describe('LearningSearchImpl', () => {
       const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
       const embedding = Buffer.from(new Float32Array(768).fill(0.7).buffer)
 
-      db.prepare(`
+      getRawDb(drizzleDb).prepare(`
         INSERT INTO learnings (
           learning_id, title, context, insight, why, implications, tags,
           abstraction, understanding, effort, resonance,

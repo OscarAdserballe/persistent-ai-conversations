@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
-import { createDatabase, closeDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../src/db/client'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { LearningExtractorImpl } from '../../src/services/learning-extractor'
 import { MockLLMModel, MockEmbeddingModel, createMockLearnings } from '../../src/mocks'
-import Database from 'better-sqlite3'
 import type { Conversation } from '../../src/core/types'
 
 describe('Learning Extraction Pipeline', () => {
   const testDbPath = join(__dirname, '../tmp/learning-extraction-test.db')
 
-  let db: Database.Database
+  let drizzleDb: DrizzleDB
   let vectorStore: SqliteVectorStore
   let llm: MockLLMModel
   let embedder: MockEmbeddingModel
@@ -24,22 +24,22 @@ describe('Learning Extraction Pipeline', () => {
     }
 
     // Create fresh database
-    db = createDatabase(testDbPath)
+    drizzleDb = createDatabase(testDbPath)
 
     // Create mocks
     llm = new MockLLMModel()
     embedder = new MockEmbeddingModel()
 
     // Create vector store and initialize
-    vectorStore = new SqliteVectorStore(db)
+    vectorStore = new SqliteVectorStore(getRawDb(drizzleDb))
     vectorStore.initialize(embedder.dimensions)
 
     // Create extractor (no vector store parameter needed)
-    extractor = new LearningExtractorImpl(llm, embedder, db)
+    extractor = new LearningExtractorImpl(llm, embedder, drizzleDb)
   })
 
   afterEach(() => {
-    closeDatabase(db)
+    getRawDb(drizzleDb).close()
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath)
     }
@@ -86,7 +86,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation into DB
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -101,7 +101,7 @@ describe('Learning Extraction Pipeline', () => {
     expect(learnings[0].tags).toContain('typescript')
 
     // Verify learnings table
-    const storedLearnings = db.prepare('SELECT * FROM learnings').all() as any[]
+    const storedLearnings = getRawDb(drizzleDb).prepare('SELECT * FROM learnings').all() as any[]
     expect(storedLearnings).toHaveLength(1)
     expect(storedLearnings[0].title).toBe('TypeScript Introduction')
 
@@ -125,7 +125,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -138,7 +138,7 @@ describe('Learning Extraction Pipeline', () => {
     expect(learnings[0].tags).toContain('tag1')
 
     // Verify tags in database
-    const storedLearnings = db.prepare('SELECT tags FROM learnings').all() as any[]
+    const storedLearnings = getRawDb(drizzleDb).prepare('SELECT tags FROM learnings').all() as any[]
     const tags = JSON.parse(storedLearnings[0].tags)
     expect(tags).toHaveLength(3)
   })
@@ -154,7 +154,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -181,7 +181,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -206,7 +206,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -215,7 +215,7 @@ describe('Learning Extraction Pipeline', () => {
     await extractor.extractFromConversation(conversation)
 
     // Verify embedding is stored
-    const learnings = db.prepare('SELECT * FROM learnings').all()
+    const learnings = getRawDb(drizzleDb).prepare('SELECT * FROM learnings').all()
     expect(learnings[0].embedding).toBeDefined()
     expect(learnings[0].embedding).toBeInstanceOf(Buffer)
 
@@ -234,7 +234,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -263,7 +263,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -275,7 +275,7 @@ describe('Learning Extraction Pipeline', () => {
     expect(learnings[0].conversationUuid).toBe('test-conv-1')
 
     // Verify stored in database
-    const storedLearnings = db.prepare('SELECT conversation_uuid FROM learnings').all() as any[]
+    const storedLearnings = getRawDb(drizzleDb).prepare('SELECT conversation_uuid FROM learnings').all() as any[]
     expect(storedLearnings[0].conversation_uuid).toBe('test-conv-1')
   })
 
@@ -290,7 +290,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -314,7 +314,7 @@ describe('Learning Extraction Pipeline', () => {
     llm.setEmptyLearnings()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -326,7 +326,7 @@ describe('Learning Extraction Pipeline', () => {
     expect(learnings).toEqual([])
 
     // Verify nothing stored in DB
-    const storedLearnings = db.prepare('SELECT * FROM learnings').all()
+    const storedLearnings = getRawDb(drizzleDb).prepare('SELECT * FROM learnings').all()
     expect(storedLearnings).toHaveLength(0)
   })
 
@@ -337,7 +337,7 @@ describe('Learning Extraction Pipeline', () => {
     llm.setStructuredResponse([{ invalid: 'data' }])
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -355,7 +355,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -364,7 +364,7 @@ describe('Learning Extraction Pipeline', () => {
     await extractor.extractFromConversation(conversation)
 
     // Verify UUIDs are generated and unique
-    const learnings = db.prepare('SELECT learning_id FROM learnings').all()
+    const learnings = getRawDb(drizzleDb).prepare('SELECT learning_id FROM learnings').all()
     expect(learnings).toHaveLength(2)
     expect(learnings[0].learning_id).toBeDefined()
     expect(learnings[1].learning_id).toBeDefined()
@@ -385,7 +385,7 @@ describe('Learning Extraction Pipeline', () => {
     ]))
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
@@ -394,7 +394,7 @@ describe('Learning Extraction Pipeline', () => {
     await extractor.extractFromConversation(conversation)
 
     // Verify embeddings stored in database
-    const learnings = db.prepare('SELECT learning_id, embedding FROM learnings').all()
+    const learnings = getRawDb(drizzleDb).prepare('SELECT learning_id, embedding FROM learnings').all()
     expect(learnings).toHaveLength(1)
     expect(learnings[0].embedding).toBeDefined()
   })
@@ -406,7 +406,7 @@ describe('Learning Extraction Pipeline', () => {
       { title: 'Learning 1', tags: ['shared-tag'] }
     ]))
 
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conv1.uuid, conv1.title, new Date().toISOString(), new Date().toISOString(), conv1.platform, conv1.messages.length)
@@ -421,7 +421,7 @@ describe('Learning Extraction Pipeline', () => {
       { title: 'Learning 2', tags: ['shared-tag'] }
     ]))
 
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conv2.uuid, conv2.title, new Date().toISOString(), new Date().toISOString(), conv2.platform, conv2.messages.length)
@@ -429,7 +429,7 @@ describe('Learning Extraction Pipeline', () => {
     await extractor.extractFromConversation(conv2)
 
     // Verify 2 learnings created
-    const learnings = db.prepare('SELECT * FROM learnings').all()
+    const learnings = getRawDb(drizzleDb).prepare('SELECT * FROM learnings').all()
     expect(learnings).toHaveLength(2)
 
     // Both can have same tag (no deduplication needed for tags)
