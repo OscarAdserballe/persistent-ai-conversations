@@ -97,12 +97,19 @@ export class LearningSearchImpl implements LearningSearch {
         implications: l.implications,
         tags: l.tags,
         abstraction: l.abstraction,
-        understanding: l.understanding,
-        effort: l.effort,
+        understanding: {
+          confidence: l.understanding.confidence,
+          canTeachIt: l.understanding.can_teach_it,
+          knownGaps: l.understanding.known_gaps,
+        },
+        effort: {
+          processingTime: l.effort.processing_time,
+          cognitiveLoad: l.effort.cognitive_load,
+        },
         resonance: l.resonance,
-        learningType: l.learningType,
-        sourceCredit: l.sourceCredit,
-        conversationUuid: l.conversationUuid,
+        learningType: l.learningType ?? undefined,
+        sourceCredit: l.sourceCredit ?? undefined,
+        conversationUuid: l.conversationUuid ?? undefined,
         createdAt: l.createdAt,
       }
 

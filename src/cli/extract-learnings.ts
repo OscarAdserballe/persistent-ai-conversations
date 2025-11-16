@@ -75,8 +75,8 @@ program
           .from(conversationsTable)
           .where(
             and(
-              gte(conversationsTable.createdAt, start.toISOString()),
-              lte(conversationsTable.createdAt, end.toISOString())
+              gte(conversationsTable.createdAt, start),
+              lte(conversationsTable.createdAt, end)
             )
           )
           .orderBy(conversationsTable.createdAt)

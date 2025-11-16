@@ -81,12 +81,12 @@ export class LearningExtractorImpl implements LearningExtractor {
         abstraction: learning.abstraction,
         understanding: {
           confidence: learning.understanding.confidence,
-          canTeachIt: learning.understanding.can_teach_it,
-          knownGaps: learning.understanding.known_gaps,
+          can_teach_it: learning.understanding.can_teach_it,
+          known_gaps: learning.understanding.known_gaps,
         },
         effort: {
-          processingTime: learning.effort.processing_time,
-          cognitiveLoad: learning.effort.cognitive_load,
+          processing_time: learning.effort.processing_time,
+          cognitive_load: learning.effort.cognitive_load,
         },
         resonance: learning.resonance,
         learningType: learning.learning_type,

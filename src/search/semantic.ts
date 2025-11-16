@@ -76,7 +76,7 @@ export class SemanticSearch implements SearchEngine {
         conversation: {
           uuid: conversation.uuid,
           title: conversation.name,
-          summary: conversation.summary,
+          summary: conversation.summary ?? undefined,
           createdAt: conversation.createdAt,
           platform: conversation.platform
         },
