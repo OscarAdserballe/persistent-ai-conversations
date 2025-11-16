@@ -199,7 +199,7 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       // Embeddings should be stored in database, not vector store
-      const learnings = db
+      const learnings = getRawDb(drizzleDb)
         .prepare("SELECT learning_id, embedding FROM learnings")
         .all() as any[];
       expect(learnings.length).toBeGreaterThan(0);
@@ -239,7 +239,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db
+      const stored = getRawDb(drizzleDb)
         .prepare("SELECT conversation_uuid FROM learnings")
         .all() as any[];
       expect(stored).toHaveLength(1);

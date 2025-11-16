@@ -3,7 +3,8 @@ import { unlinkSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { createDefaultConfig } from '../../src/config'
-import Database from 'better-sqlite3'
+import { createDatabase } from '../../src/factories'
+import { getRawDb } from '../../src/db/client'
 
 describe('Full Workflow E2E', () => {
   const testDbPath = join(__dirname, '../tmp/e2e-workflow-test.db')
@@ -71,7 +72,8 @@ describe('Full Workflow E2E', () => {
     expect(existsSync(testDbPath)).toBe(true)
 
     // Step 4: Verify data in database
-    const db = new Database(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     const conversations = db.prepare('SELECT * FROM conversations').all()
     expect(conversations.length).toBeGreaterThan(0)
@@ -171,7 +173,8 @@ describe('Full Workflow E2E', () => {
       expect(ingestOutput).toContain('2 conversations')
 
       // Verify both conversations in database
-      const db = new Database(testDbPath)
+      const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
       const conversations = db.prepare('SELECT * FROM conversations').all()
       expect(conversations.length).toBe(2)
       db.close()
@@ -251,7 +254,8 @@ describe('Full Workflow E2E', () => {
       { encoding: 'utf-8', cwd: join(__dirname, '../..') }
     )
 
-    const db = new Database(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     // Verify conversations have correct structure
     const conversations = db.prepare('SELECT * FROM conversations').all()
@@ -320,7 +324,8 @@ describe('Full Workflow E2E', () => {
     expect(ingestOutput).toContain('Successfully imported')
 
     // Verify all messages have text
-    const db = new Database(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
     const messages = db.prepare('SELECT text FROM messages').all()
 
     for (const msg of messages) {
@@ -347,13 +352,15 @@ describe('Full Workflow E2E', () => {
     )
 
     // Get initial counts
-    let db = new Database(testDbPath)
+    let drizzleDb = createDatabase(testDbPath)
+    let db = getRawDb(drizzleDb)
     const initialConvCount = db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number }
     const initialMsgCount = db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number }
     db.close()
 
     // Close and reopen database
-    db = new Database(testDbPath)
+    drizzleDb = createDatabase(testDbPath)
+    db = getRawDb(drizzleDb)
     const afterConvCount = db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number }
     const afterMsgCount = db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number }
     db.close()
@@ -378,7 +385,8 @@ describe('Full Workflow E2E', () => {
       { encoding: 'utf-8', cwd: join(__dirname, '../..') }
     )
 
-    const db = new Database(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     // Verify FTS5 tables have same row count as main tables
     const convCount = db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number }
