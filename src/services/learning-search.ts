@@ -7,7 +7,7 @@ import {
   Learning
 } from '../core/types'
 import { DrizzleDB } from '../db/client'
-import { learnings, conversations } from '../db/schema'
+import { learnings as learningsTable, conversations } from '../db/schema'
 import { eq, and, gte, lte, inArray } from 'drizzle-orm'
 
 /**
@@ -48,27 +48,27 @@ export class LearningSearchImpl implements LearningSearch {
     const scoreMap = new Map(vectorResults.map(r => [r.id, r.score]))
 
     // Build filter conditions
-    const conditions = [inArray(learnings.learningId, learningIds)]
+    const conditions = [inArray(learningsTable.learningId, learningIds)]
 
     if (options?.dateRange) {
       conditions.push(
-        gte(learnings.createdAt, options.dateRange.start),
-        lte(learnings.createdAt, options.dateRange.end)
+        gte(learningsTable.createdAt, options.dateRange.start),
+        lte(learningsTable.createdAt, options.dateRange.end)
       )
     }
 
     if (options?.learningType) {
-      conditions.push(eq(learnings.learningType, options.learningType))
+      conditions.push(eq(learningsTable.learningType, options.learningType))
     }
 
     // Type-safe query with join - Drizzle handles JSON parsing automatically!
     const rows = await this.db
       .select({
-        learning: learnings,
+        learning: learningsTable,
         conversation: conversations
       })
-      .from(learnings)
-      .leftJoin(conversations, eq(learnings.conversationUuid, conversations.uuid))
+      .from(learningsTable)
+      .leftJoin(conversations, eq(learningsTable.conversationUuid, conversations.uuid))
       .where(and(...conditions))
 
     // 4. Apply tag filter and build results

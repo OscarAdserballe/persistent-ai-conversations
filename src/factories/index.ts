@@ -18,6 +18,7 @@ import { GeminiFlash } from '../llm/gemini-flash'
 import { LearningExtractorImpl } from '../services/learning-extractor'
 import { LearningSearchImpl } from '../services/learning-search'
 import { createDrizzleDb, getRawDb, DrizzleDB } from '../db/client'
+import { initializeSchema } from '../db/schema'
 import { MockEmbeddingModel, MockLLMModel } from '../mocks'
 import { mkdirSync } from 'fs'
 import { dirname } from 'path'
@@ -62,9 +63,13 @@ export function createDatabase(path: string): DrizzleDB {
 
   const db = createDrizzleDb(path)
 
-  // For now, use raw DB to initialize FTS5 tables (Drizzle doesn't support FTS5 yet)
+  // For now, use raw DB to initialize base tables and FTS5 tables
+  // (Drizzle doesn't support FTS5 yet, and we need tables before migrations run)
   // This will be handled by proper migrations later
   const rawDb = getRawDb(db)
+
+  // Initialize base tables using Drizzle schema SQL
+  initializeSchema(rawDb)
 
   // Initialize FTS5 tables and triggers
   rawDb.exec(`

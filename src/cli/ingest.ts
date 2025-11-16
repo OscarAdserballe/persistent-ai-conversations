@@ -48,7 +48,8 @@ program
           conversation.createdAt.toISOString(),
           conversation.updatedAt.toISOString(),
           conversation.platform,
-          conversation.messages.length
+          conversation.messages.length,
+          null  // embedding - not computed during ingest
         )
 
         // Process messages - chunk and embed

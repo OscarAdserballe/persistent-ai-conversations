@@ -11,7 +11,7 @@ import {
   type LearningJSONType,
 } from "../schemas/learning";
 import { DrizzleDB } from "../db/client";
-import { learnings, type LearningInsert } from "../db/schema";
+import { learnings as learningsTable, type LearningInsert } from "../db/schema";
 
 /**
  * Service for extracting learnings from conversations.
@@ -96,7 +96,7 @@ export class LearningExtractorImpl implements LearningExtractor {
         createdAt: now,
       };
 
-      await this.db.insert(learnings).values(insertData);
+      await this.db.insert(learningsTable).values(insertData);
 
       results.push({
         learningId,

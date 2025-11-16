@@ -219,7 +219,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db.prepare("SELECT * FROM learnings").all() as any[];
+      const stored = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all() as any[];
       expect(stored).toHaveLength(1);
       expect(stored[0].title).toBe("Database Test");
       // Tags should be JSON
@@ -321,7 +321,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db.prepare("SELECT tags FROM learnings").all() as any[];
+      const stored = getRawDb(drizzleDb).prepare("SELECT tags FROM learnings").all() as any[];
       const tags = JSON.parse(stored[0].tags);
       expect(tags).toContain("test-tag");
     });
@@ -355,7 +355,7 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       // Both should be inserted or neither (transaction)
-      const learnings = db.prepare("SELECT * FROM learnings").all();
+      const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
       expect(learnings).toHaveLength(2);
     });
   });
