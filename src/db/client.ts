@@ -32,8 +32,8 @@ export function getRawDb(db: DrizzleDB): Database.Database {
 
   // Try various paths to find the raw Database instance
   const candidates = [
-    anyDb._.session?.client,  // drizzle-orm 0.44+ newer structure
-    anyDb._.session,           // drizzle-orm 0.44+
+    anyDb._?.session?.client,  // drizzle-orm 0.44+ newer structure
+    anyDb._?.session,          // drizzle-orm 0.44+
     anyDb.session?.client,     // With client wrapper
     anyDb.session?.db,         // Older structure
     anyDb.session,             // Direct session

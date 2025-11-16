@@ -5,10 +5,11 @@ import {
   createEmbeddingModel,
   createVectorStore,
   createSearchEngine,
-  createImporter
+  createImporter,
+  createDatabase
 } from '../../src/factories'
+import { getRawDb } from '../../src/db/client'
 import { createDefaultConfig } from '../../src/config'
-import { createDatabase } from '../../src/db/database'
 import type { Config } from '../../src/core/types'
 import Database from 'better-sqlite3'
 
@@ -63,8 +64,8 @@ describe('Factory Wiring Integration', () => {
   })
 
   it('should create vector store from database', () => {
-    const db = new Database(testDbPath)
-    const vectorStore = createVectorStore(db)
+    const drizzleDb = createDatabase(testDbPath)
+    const vectorStore = createVectorStore(drizzleDb)
 
     expect(vectorStore).toBeDefined()
     expect(typeof vectorStore.initialize).toBe('function')
@@ -74,7 +75,7 @@ describe('Factory Wiring Integration', () => {
     // Should not be initialized yet
     expect(vectorStore.getDimensions()).toBeNull()
 
-    db.close()
+    getRawDb(drizzleDb).close()
   })
 
   it('should propagate dimensions from embedder to vector store', () => {
@@ -234,8 +235,10 @@ describe('Factory Wiring Integration', () => {
     mkdirSync(dirname(nestedDbPath), { recursive: true })
 
     try {
-      const vectorStore = createVectorStore(nestedConfig)
+      const drizzleDb = createDatabase(nestedDbPath)
+      const vectorStore = createVectorStore(drizzleDb)
       expect(vectorStore).toBeDefined()
+      getRawDb(drizzleDb).close()
 
       // Clean up
       if (existsSync(nestedDbPath)) {
