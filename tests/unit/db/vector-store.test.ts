@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { SqliteVectorStore } from '../../../src/db/vector-store'
-import { initializeSchema } from '../../../src/db/schema'
+import { createDatabase } from '../../../src/factories'
+import { getRawDb } from '../../../src/db/client'
 import { unlinkSync } from 'fs'
 import { resolve } from 'path'
 
@@ -11,9 +12,9 @@ describe('SqliteVectorStore', () => {
   const dbPath = resolve(__dirname, '../../tmp/vector-store-test.db')
 
   beforeEach(() => {
-    // Create fresh database
-    db = new Database(dbPath)
-    initializeSchema(db)
+    // Create fresh database using factory (handles migrations)
+    const drizzleDb = createDatabase(dbPath)
+    db = getRawDb(drizzleDb)
     vectorStore = new SqliteVectorStore(db)
 
     // Insert test messages

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
-import { createDatabase, closeDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb } from '../../src/db/client'
 import Database from 'better-sqlite3'
 
 describe('Database Integration', () => {
@@ -22,7 +23,8 @@ describe('Database Integration', () => {
   })
 
   it('should create database with correct schema', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     // Verify database file was created
     expect(existsSync(testDbPath)).toBe(true)
@@ -65,11 +67,12 @@ describe('Database Integration', () => {
     `).get()
     expect(learningsTable).toBeDefined()
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should have correct indexes', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     // Get all indexes
     const indexes = db.prepare(`
@@ -87,11 +90,12 @@ describe('Database Integration', () => {
     expect(indexNames).toContain('idx_messages_sender')
     expect(indexNames).toContain('idx_messages_created')
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should enforce foreign key constraints', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     // Verify foreign keys are enabled
     const fkEnabled = db.pragma('foreign_keys', { simple: true })
@@ -105,11 +109,12 @@ describe('Database Integration', () => {
       `).run('msg-1', 'nonexistent-conv', 0, 'human', 'test', new Date().toISOString())
     }).toThrow()
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should support insert and query operations', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     const convUuid = 'test-conv-1'
     const msgUuid = 'test-msg-1'
@@ -141,11 +146,12 @@ describe('Database Integration', () => {
     expect(message).toBeDefined()
     expect((message as any).text).toBe('Hello, world!')
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should cascade delete messages when conversation is deleted', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     const convUuid = 'test-conv-2'
     const msgUuid = 'test-msg-2'
@@ -169,11 +175,12 @@ describe('Database Integration', () => {
     const message = db.prepare('SELECT * FROM messages WHERE uuid = ?').get(msgUuid)
     expect(message).toBeUndefined()
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should sync FTS5 tables automatically', () => {
-    const db = createDatabase(testDbPath)
+    const drizzleDb = createDatabase(testDbPath)
+    const db = getRawDb(drizzleDb)
 
     const convUuid = 'test-conv-3'
     const now = new Date().toISOString()
@@ -192,12 +199,13 @@ describe('Database Integration', () => {
     expect(results.length).toBe(1)
     expect(results[0].uuid).toBe(convUuid)
 
-    closeDatabase(db)
+    db.close()
   })
 
   it('should support reopening database', () => {
     // Create and close database
-    let db = createDatabase(testDbPath)
+    let drizzleDb = createDatabase(testDbPath)
+    let db = getRawDb(drizzleDb)
     const convUuid = 'test-conv-4'
     const now = new Date().toISOString()
 
@@ -206,7 +214,7 @@ describe('Database Integration', () => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(convUuid, 'Persistent Test', now, now, 'claude', 0)
 
-    closeDatabase(db)
+    db.close()
 
     // Reopen database
     db = new Database(testDbPath)
@@ -218,6 +226,6 @@ describe('Database Integration', () => {
     expect(conversation).toBeDefined()
     expect((conversation as any).name).toBe('Persistent Test')
 
-    closeDatabase(db)
+    db.close()
   })
 })

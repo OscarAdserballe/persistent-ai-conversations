@@ -8,7 +8,6 @@ import {
 } from '../../../src/mocks';
 import { ZodError } from "zod";
 import { createDrizzleDb, getRawDb, type DrizzleDB } from "../../../src/db/client";
-import { initializeSchema } from "../../../src/db/schema";
 
 describe("LearningExtractorImpl", () => {
   let extractor: LearningExtractorImpl;

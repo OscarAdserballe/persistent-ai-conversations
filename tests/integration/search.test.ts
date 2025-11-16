@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
-import { createDatabase, closeDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../src/db/client'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { SemanticSearch } from '../../src/search/semantic'
 import { MockEmbeddingModel } from '../../src/mocks'
@@ -10,6 +11,7 @@ import Database from 'better-sqlite3'
 describe('Search Pipeline Integration', () => {
   const testDbPath = join(__dirname, '../tmp/search-integration-test.db')
 
+  let drizzleDb: DrizzleDB
   let db: Database.Database
   let vectorStore: SqliteVectorStore
   let embedder: MockEmbeddingModel
@@ -22,7 +24,8 @@ describe('Search Pipeline Integration', () => {
     }
 
     // Create fresh database
-    db = createDatabase(testDbPath)
+    drizzleDb = createDatabase(testDbPath)
+    db = getRawDb(drizzleDb)
 
     // Create mock embedder (deterministic embeddings)
     embedder = new MockEmbeddingModel()
@@ -31,12 +34,12 @@ describe('Search Pipeline Integration', () => {
     vectorStore = new SqliteVectorStore(db)
     vectorStore.initialize(embedder.dimensions)
 
-    // Create search engine
-    searchEngine = new SemanticSearch(embedder, vectorStore, db)
+    // Create search engine with DrizzleDB
+    searchEngine = new SemanticSearch(embedder, vectorStore, drizzleDb)
   })
 
   afterEach(() => {
-    closeDatabase(db)
+    db.close()
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath)
     }
