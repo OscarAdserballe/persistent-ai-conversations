@@ -10,7 +10,7 @@
     "provider": "gemini",
     "model": "gemini-2.5-flash-lite",
     "temperature": 0.5,
-    "maxTokens": 2000,
+    "maxTokens": 8000,
     "rateLimitDelayMs": 1000
   },
   "db": {

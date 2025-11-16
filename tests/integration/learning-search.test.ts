@@ -51,36 +51,26 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'TypeScript Tutorial', '${now}', '${now}', 'claude', 0)
     `).run()
 
-    // Insert categories
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, created_at)
-      VALUES
-        ('cat-1', 'programming', '${now}'),
-        ('cat-2', 'typescript', '${now}')
-    `).run()
-
-    // Insert learning with embedding
+    // Insert learning with new schema
     const learningText = 'TypeScript adds static typing'
     const embedding = await embedder.embed(learningText)
 
-    db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-1', 'TypeScript Intro', '${learningText}', '${now}', ?)
-    `).run(Buffer.from(embedding.buffer))
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['programming', 'typescript'])
 
-    // Assign categories
     db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES
-        ('learn-1', 'cat-1'),
-        ('learn-1', 'cat-2')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-1', 'TypeScript Intro', 'Context', '${learningText}', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+    `).run(tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
 
-    // Link to source
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-1', 'conv-1')
-    `).run()
+    // No more category assignments - tags are in JSON field
+    // No more learning_sources table - conversation_uuid is in learnings table
 
     // Search
     const results = await search.search('TypeScript', { limit: 10 })
@@ -91,17 +81,17 @@ describe('Learning Search Pipeline', () => {
     // Verify learning data
     expect(result.learning.learningId).toBe('learn-1')
     expect(result.learning.title).toBe('TypeScript Intro')
-    expect(result.learning.content).toContain('TypeScript')
+    expect(result.learning.insight).toContain('TypeScript')
 
-    // Verify categories
-    expect(result.learning.categories.length).toBe(2)
-    const categoryNames = result.learning.categories.map(c => c.name).sort()
-    expect(categoryNames).toEqual(['programming', 'typescript'])
+    // Verify tags (replaces categories)
+    expect(result.learning.tags.length).toBe(2)
+    const tagNames = result.learning.tags.sort()
+    expect(tagNames).toEqual(['programming', 'typescript'])
 
-    // Verify sources
-    expect(result.sourceConversations.length).toBe(1)
-    expect(result.sourceConversations[0].uuid).toBe('conv-1')
-    expect(result.sourceConversations[0].title).toBe('TypeScript Tutorial')
+    // Verify source (singular, not plural)
+    expect(result.sourceConversation).toBeDefined()
+    expect(result.sourceConversation?.uuid).toBe('conv-1')
+    expect(result.sourceConversation?.title).toBe('TypeScript Tutorial')
 
     // Verify score
     expect(result.score).toBeGreaterThan(0)
@@ -118,29 +108,32 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${oldDate.toISOString()}', '${oldDate.toISOString()}', 'claude', 0)
     `).run()
 
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['test'])
+
     // Insert old learning
     const oldEmbedding = await embedder.embed('old content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-old', 'Old Learning', 'old content', '${oldDate.toISOString()}', ?)
-    `).run(Buffer.from(oldEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-old', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-old', 'Old Learning', 'Context', 'old content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, ?)
+    `).run(tags, abstraction, understanding, effort, resonance, Buffer.from(oldEmbedding.buffer), oldDate.toISOString())
 
     // Insert recent learning
     const recentEmbedding = await embedder.embed('recent content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-recent', 'Recent Learning', 'recent content', '${recentDate.toISOString()}', ?)
-    `).run(Buffer.from(recentEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-recent', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-recent', 'Recent Learning', 'Context', 'recent content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, ?)
+    `).run(tags, abstraction, understanding, effort, resonance, Buffer.from(recentEmbedding.buffer), recentDate.toISOString())
 
     // Search with date filter
     const results = await search.search('content', {
@@ -158,7 +151,7 @@ describe('Learning Search Pipeline', () => {
     }
   })
 
-  it('should filter by category', async () => {
+  it('should filter by tags', async () => {
     const now = new Date().toISOString()
 
     // Insert conversation
@@ -167,63 +160,49 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
 
-    // Insert categories
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, created_at)
-      VALUES
-        ('cat-typescript', 'typescript', '${now}'),
-        ('cat-react', 'react', '${now}')
-    `).run()
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
 
     // Insert TypeScript learning
+    const tsTags = JSON.stringify(['typescript', 'programming'])
     const tsEmbedding = await embedder.embed('TypeScript content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-ts', 'TypeScript Learning', 'TypeScript content', '${now}', ?)
-    `).run(Buffer.from(tsEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES ('learn-ts', 'cat-typescript')
-    `).run()
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-ts', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-ts', 'TypeScript Learning', 'Context', 'TypeScript content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+    `).run(tsTags, abstraction, understanding, effort, resonance, Buffer.from(tsEmbedding.buffer))
 
     // Insert React learning
+    const reactTags = JSON.stringify(['react', 'frontend'])
     const reactEmbedding = await embedder.embed('React content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-react', 'React Learning', 'React content', '${now}', ?)
-    `).run(Buffer.from(reactEmbedding.buffer))
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-react', 'React Learning', 'Context', 'React content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+    `).run(reactTags, abstraction, understanding, effort, resonance, Buffer.from(reactEmbedding.buffer))
 
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES ('learn-react', 'cat-react')
-    `).run()
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-react', 'conv-1')
-    `).run()
-
-    // Search with category filter
+    // Search with tag filter
     const results = await search.search('content', {
-      categoryNames: ['typescript'],
+      tags: ['typescript'],
       limit: 10
     })
 
     // Should only get TypeScript learning
     expect(results.length).toBeGreaterThan(0)
     for (const result of results) {
-      const hasTypescript = result.learning.categories.some(c => c.name === 'typescript')
+      const hasTypescript = result.learning.tags.some(t => t === 'typescript')
       expect(hasTypescript).toBe(true)
     }
   })
 
-  it('should filter by multiple categories (OR logic)', async () => {
+  it('should filter by multiple tags (OR logic)', async () => {
     const now = new Date().toISOString()
 
     // Insert conversation
@@ -232,52 +211,43 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
 
-    // Insert categories
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, created_at)
-      VALUES
-        ('cat-1', 'typescript', '${now}'),
-        ('cat-2', 'react', '${now}'),
-        ('cat-3', 'python', '${now}')
-    `).run()
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
 
-    // Insert learnings with different categories
+    // Insert learnings with different tags
     const learnings = [
-      { id: 'learn-1', category: 'cat-1' },
-      { id: 'learn-2', category: 'cat-2' },
-      { id: 'learn-3', category: 'cat-3' }
+      { id: 'learn-1', tags: ['typescript'] },
+      { id: 'learn-2', tags: ['react'] },
+      { id: 'learn-3', tags: ['python'] }
     ]
 
     for (const learning of learnings) {
       const embedding = await embedder.embed(`content ${learning.id}`)
+      const tags = JSON.stringify(learning.tags)
 
       db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-        VALUES (?, ?, ?, '${now}', ?)
-      `).run(learning.id, `Title ${learning.id}`, `content ${learning.id}`, Buffer.from(embedding.buffer))
-
-      db.prepare(`
-        INSERT INTO learning_category_assignments (learning_id, category_id)
-        VALUES (?, ?)
-      `).run(learning.id, learning.category)
-
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES (?, 'conv-1')
-      `).run(learning.id)
+        INSERT INTO learnings (
+          learning_id, title, context, insight, why, implications, tags,
+          abstraction, understanding, effort, resonance,
+          conversation_uuid, embedding, created_at
+        ) VALUES (?, ?, 'Context', ?, 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+      `).run(learning.id, `Title ${learning.id}`, `content ${learning.id}`, tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
     }
 
-    // Search with multiple categories
+    // Search with multiple tags
     const results = await search.search('content', {
-      categoryNames: ['typescript', 'react'],
+      tags: ['typescript', 'react'],
       limit: 10
     })
 
     // Should get TypeScript and React learnings (not Python)
     expect(results.length).toBe(2)
     for (const result of results) {
-      const categoryNames = result.learning.categories.map(c => c.name)
-      const hasEither = categoryNames.includes('typescript') || categoryNames.includes('react')
+      const tagNames = result.learning.tags
+      const hasEither = tagNames.includes('typescript') || tagNames.includes('react')
       expect(hasEither).toBe(true)
     }
   })
@@ -290,6 +260,13 @@ describe('Learning Search Pipeline', () => {
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
+
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['test'])
 
     // Insert 5 learnings with varying similarity to "TypeScript"
     const learnings = [
@@ -304,14 +281,12 @@ describe('Learning Search Pipeline', () => {
       const embedding = await embedder.embed(learning.text)
 
       db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-        VALUES (?, ?, ?, '${now}', ?)
-      `).run(learning.id, learning.text, learning.text, Buffer.from(embedding.buffer))
-
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES (?, 'conv-1')
-      `).run(learning.id)
+        INSERT INTO learnings (
+          learning_id, title, context, insight, why, implications, tags,
+          abstraction, understanding, effort, resonance,
+          conversation_uuid, embedding, created_at
+        ) VALUES (?, ?, 'Context', ?, 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+      `).run(learning.id, learning.text, learning.text, tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
     }
 
     // Search
@@ -341,20 +316,25 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
 
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['test'])
+
     // Insert 10 similar learnings
     for (let i = 0; i < 10; i++) {
       const text = `Learning ${i} about programming`
       const embedding = await embedder.embed(text)
 
       db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-        VALUES (?, ?, ?, '${now}', ?)
-      `).run(`learn-${i}`, text, text, Buffer.from(embedding.buffer))
-
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES (?, 'conv-1')
-      `).run(`learn-${i}`)
+        INSERT INTO learnings (
+          learning_id, title, context, insight, why, implications, tags,
+          abstraction, understanding, effort, resonance,
+          conversation_uuid, embedding, created_at
+        ) VALUES (?, ?, 'Context', ?, 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+      `).run(`learn-${i}`, text, text, tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
     }
 
     // Search with limit of 3
@@ -363,73 +343,52 @@ describe('Learning Search Pipeline', () => {
     expect(results.length).toBeLessThanOrEqual(3)
   })
 
-  it('should combine date and category filters', async () => {
+  it('should combine date and tag filters', async () => {
     // Insert conversation
     db.prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', datetime('now'), datetime('now'), 'claude', 0)
     `).run()
 
-    // Insert categories
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, created_at)
-      VALUES
-        ('cat-1', 'typescript', datetime('now')),
-        ('cat-2', 'python', datetime('now'))
-    `).run()
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
 
     // Insert old TypeScript learning
     const oldDate = new Date('2023-01-01')
     const oldEmbedding = await embedder.embed('old TypeScript')
+    const tsTags = JSON.stringify(['typescript'])
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-old-ts', 'Old TS', 'old TypeScript', ?, ?)
-    `).run(oldDate.toISOString(), Buffer.from(oldEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES ('learn-old-ts', 'cat-1')
-    `).run()
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-old-ts', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-old-ts', 'Old TS', 'Context', 'old TypeScript', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, ?)
+    `).run(tsTags, abstraction, understanding, effort, resonance, Buffer.from(oldEmbedding.buffer), oldDate.toISOString())
 
     // Insert recent TypeScript learning
     const recentDate = new Date('2024-06-01')
     const recentEmbedding = await embedder.embed('recent TypeScript')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-recent-ts', 'Recent TS', 'recent TypeScript', ?, ?)
-    `).run(recentDate.toISOString(), Buffer.from(recentEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES ('learn-recent-ts', 'cat-1')
-    `).run()
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-recent-ts', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-recent-ts', 'Recent TS', 'Context', 'recent TypeScript', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, ?)
+    `).run(tsTags, abstraction, understanding, effort, resonance, Buffer.from(recentEmbedding.buffer), recentDate.toISOString())
 
     // Insert recent Python learning
     const pythonEmbedding = await embedder.embed('recent Python')
+    const pyTags = JSON.stringify(['python'])
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-recent-py', 'Recent Py', 'recent Python', ?, ?)
-    `).run(recentDate.toISOString(), Buffer.from(pythonEmbedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES ('learn-recent-py', 'cat-2')
-    `).run()
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-recent-py', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-recent-py', 'Recent Py', 'Context', 'recent Python', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, ?)
+    `).run(pyTags, abstraction, understanding, effort, resonance, Buffer.from(pythonEmbedding.buffer), recentDate.toISOString())
 
     // Search with both filters
     const results = await search.search('programming', {
@@ -437,7 +396,7 @@ describe('Learning Search Pipeline', () => {
         start: new Date('2024-01-01'),
         end: new Date('2024-12-31')
       },
-      categoryNames: ['typescript'],
+      tags: ['typescript'],
       limit: 10
     })
 
@@ -455,32 +414,36 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'TypeScript Tutorial', 'A detailed tutorial', '${now}', '${now}', 'claude', 5)
     `).run()
 
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['typescript'])
+
     // Insert learning
     const embedding = await embedder.embed('TypeScript content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-1', 'TypeScript', 'TypeScript content', '${now}', ?)
-    `).run(Buffer.from(embedding.buffer))
-
-    // Link to conversation
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-1', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-1', 'TypeScript', 'Context', 'TypeScript content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+    `).run(tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
 
     // Search
     const results = await search.search('TypeScript', { limit: 10 })
 
     expect(results.length).toBeGreaterThan(0)
 
-    // Verify source conversation enrichment
-    const source = results[0].sourceConversations[0]
-    expect(source.uuid).toBe('conv-1')
-    expect(source.title).toBe('TypeScript Tutorial')
-    expect(source.createdAt).toBeInstanceOf(Date)
+    // Verify source conversation enrichment (singular, not plural)
+    const source = results[0].sourceConversation
+    expect(source?.uuid).toBe('conv-1')
+    expect(source?.title).toBe('TypeScript Tutorial')
+    expect(source?.createdAt).toBeInstanceOf(Date)
   })
 
-  it('should handle learnings with no categories', async () => {
+  it('should handle learnings with no tags', async () => {
     const now = new Date().toISOString()
 
     // Insert conversation
@@ -489,23 +452,28 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
 
-    // Insert learning without categories
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const emptyTags = JSON.stringify([])
+
+    // Insert learning without tags
     const embedding = await embedder.embed('uncategorized content')
     db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-      VALUES ('learn-1', 'Uncategorized', 'uncategorized content', '${now}', ?)
-    `).run(Buffer.from(embedding.buffer))
-
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES ('learn-1', 'conv-1')
-    `).run()
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES ('learn-1', 'Uncategorized', 'Context', 'uncategorized content', 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+    `).run(emptyTags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
 
     // Search
     const results = await search.search('content', { limit: 10 })
 
     expect(results.length).toBeGreaterThan(0)
-    expect(results[0].learning.categories).toEqual([])
+    expect(results[0].learning.tags).toEqual([])
   })
 
   it('should handle large result sets efficiently', async () => {
@@ -517,20 +485,25 @@ describe('Learning Search Pipeline', () => {
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
 
+    // Common JSON fields
+    const abstraction = JSON.stringify({ concrete: 'Test concrete', pattern: 'Test pattern', principle: 'Test principle' })
+    const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+    const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+    const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+    const tags = JSON.stringify(['test'])
+
     // Insert 100 learnings
     for (let i = 0; i < 100; i++) {
       const text = `Learning ${i} about programming and software development`
       const embedding = await embedder.embed(text)
 
       db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at, embedding)
-        VALUES (?, ?, ?, '${now}', ?)
-      `).run(`learn-${i}`, text, text, Buffer.from(embedding.buffer))
-
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES (?, 'conv-1')
-      `).run(`learn-${i}`)
+        INSERT INTO learnings (
+          learning_id, title, context, insight, why, implications, tags,
+          abstraction, understanding, effort, resonance,
+          conversation_uuid, embedding, created_at
+        ) VALUES (?, ?, 'Context', ?, 'Why', 'Implications', ?, ?, ?, ?, ?, 'conv-1', ?, '${now}')
+      `).run(`learn-${i}`, text, text, tags, abstraction, understanding, effort, resonance, Buffer.from(embedding.buffer))
     }
 
     // Search with limit

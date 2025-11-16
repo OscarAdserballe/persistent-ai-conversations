@@ -62,8 +62,12 @@ export const CREATE_MESSAGE_CHUNKS_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_uuid);
 `
 
-export const CREATE_LEARNINGS_TABLE = `
-CREATE TABLE IF NOT EXISTS learnings (
+// ============================================================================
+// ARCHIVED TABLES (Old Schema - Preserved for Reference)
+// ============================================================================
+
+export const CREATE_ARCHIVED_LEARNINGS_TABLE = `
+CREATE TABLE IF NOT EXISTS _archived_learnings (
   learning_id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
@@ -73,12 +77,8 @@ CREATE TABLE IF NOT EXISTS learnings (
 );
 `
 
-export const CREATE_LEARNINGS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_learnings_created ON learnings(created_at);
-`
-
-export const CREATE_LEARNING_CATEGORIES_TABLE = `
-CREATE TABLE IF NOT EXISTS learning_categories (
+export const CREATE_ARCHIVED_LEARNING_CATEGORIES_TABLE = `
+CREATE TABLE IF NOT EXISTS _archived_learning_categories (
   category_id TEXT PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
   description TEXT,
@@ -86,42 +86,68 @@ CREATE TABLE IF NOT EXISTS learning_categories (
 );
 `
 
-export const CREATE_LEARNING_CATEGORIES_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_learning_categories_name ON learning_categories(name);
-`
-
-export const CREATE_LEARNING_CATEGORY_ASSIGNMENTS_TABLE = `
-CREATE TABLE IF NOT EXISTS learning_category_assignments (
+export const CREATE_ARCHIVED_LEARNING_CATEGORY_ASSIGNMENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS _archived_learning_category_assignments (
   learning_id TEXT NOT NULL,
   category_id TEXT NOT NULL,
   assigned_at DATETIME NOT NULL DEFAULT (datetime('now')),
-
-  PRIMARY KEY (learning_id, category_id),
-  FOREIGN KEY (learning_id) REFERENCES learnings(learning_id) ON DELETE CASCADE,
-  FOREIGN KEY (category_id) REFERENCES learning_categories(category_id) ON DELETE CASCADE
+  PRIMARY KEY (learning_id, category_id)
 );
 `
 
-export const CREATE_LEARNING_CATEGORY_ASSIGNMENTS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_lca_learning ON learning_category_assignments(learning_id);
-CREATE INDEX IF NOT EXISTS idx_lca_category ON learning_category_assignments(category_id);
-`
-
-export const CREATE_LEARNING_SOURCES_TABLE = `
-CREATE TABLE IF NOT EXISTS learning_sources (
+export const CREATE_ARCHIVED_LEARNING_SOURCES_TABLE = `
+CREATE TABLE IF NOT EXISTS _archived_learning_sources (
   learning_id TEXT NOT NULL,
   conversation_uuid TEXT,
-  message_uuid TEXT,
-
-  FOREIGN KEY (learning_id) REFERENCES learnings(learning_id) ON DELETE CASCADE,
-  FOREIGN KEY (conversation_uuid) REFERENCES conversations(uuid) ON DELETE CASCADE,
-  FOREIGN KEY (message_uuid) REFERENCES messages(uuid) ON DELETE CASCADE
+  message_uuid TEXT
 );
 `
 
-export const CREATE_LEARNING_SOURCES_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_learning_sources_learning ON learning_sources(learning_id);
-CREATE INDEX IF NOT EXISTS idx_learning_sources_conv ON learning_sources(conversation_uuid);
+// ============================================================================
+// NEW LEARNING SCHEMA (Advanced Epistemic Introspection)
+// ============================================================================
+
+export const CREATE_LEARNINGS_TABLE = `
+CREATE TABLE IF NOT EXISTS learnings (
+  learning_id TEXT PRIMARY KEY,
+
+  -- Core fields
+  title TEXT NOT NULL,
+  context TEXT NOT NULL,
+  insight TEXT NOT NULL,
+  why TEXT NOT NULL,
+  implications TEXT NOT NULL,
+  tags TEXT NOT NULL,              -- JSON array: ["tag1", "tag2"]
+
+  -- Nested objects stored as JSON
+  abstraction TEXT NOT NULL,       -- JSON: {concrete, pattern, principle?}
+  understanding TEXT NOT NULL,     -- JSON: {confidence, canTeachIt, knownGaps?}
+  effort TEXT NOT NULL,            -- JSON: {processingTime, cognitiveLoad}
+  resonance TEXT NOT NULL,         -- JSON: {intensity, valence}
+
+  -- Classification
+  learning_type TEXT,              -- 'principle' | 'method' | 'anti_pattern' | 'exception'
+  source_credit TEXT,
+
+  -- Source tracking (simplified - just conversation UUID)
+  conversation_uuid TEXT,
+
+  -- Vector embedding
+  embedding BLOB NOT NULL,
+
+  -- Timestamps
+  created_at DATETIME NOT NULL,
+
+  -- Constraints
+  CHECK (learning_type IN ('principle', 'method', 'anti_pattern', 'exception', NULL)),
+  FOREIGN KEY (conversation_uuid) REFERENCES conversations(uuid) ON DELETE SET NULL
+);
+`
+
+export const CREATE_LEARNINGS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_learnings_created ON learnings(created_at);
+CREATE INDEX IF NOT EXISTS idx_learnings_type ON learnings(learning_type);
+CREATE INDEX IF NOT EXISTS idx_learnings_conversation ON learnings(conversation_uuid);
 `
 
 export const CREATE_CONVERSATIONS_FTS = `
@@ -173,13 +199,102 @@ END;
 `
 
 /**
+ * Validate that the learnings table has the correct advanced schema
+ *
+ * This function checks if the learnings table exists and has all required columns
+ * for the advanced epistemic introspection schema. If the schema is outdated or missing,
+ * it throws a clear error with migration instructions.
+ *
+ * @param db - Database instance to validate
+ * @throws Error if learnings table has wrong schema
+ */
+export function validateLearningsSchema(db: Database.Database): void {
+  // Check if learnings table exists
+  const tableExists = db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name='learnings'
+  `).get()
+
+  if (!tableExists) {
+    // Table doesn't exist - that's OK, initializeSchema will create it
+    return
+  }
+
+  // Get table schema
+  const schema = db.prepare('PRAGMA table_info(learnings)').all() as Array<{
+    cid: number
+    name: string
+    type: string
+    notnull: number
+    dflt_value: string | null
+    pk: number
+  }>
+
+  // Required columns for advanced schema
+  const requiredColumns = [
+    'learning_id',
+    'title',
+    'context',
+    'insight',
+    'why',
+    'implications',
+    'tags',
+    'abstraction',
+    'understanding',
+    'effort',
+    'resonance',
+    'learning_type',
+    'source_credit',
+    'conversation_uuid',
+    'embedding',
+    'created_at'
+  ]
+
+  // Check which required columns are missing
+  const actualColumns = schema.map(col => col.name)
+  const missingColumns = requiredColumns.filter(col => !actualColumns.includes(col))
+
+  if (missingColumns.length > 0) {
+    throw new Error(`
+❌ Database schema is outdated!
+
+The 'learnings' table is missing required columns: ${missingColumns.join(', ')}
+
+This usually happens when you're upgrading from an older version of the application
+that used a simpler learnings schema.
+
+To fix this, you need to run the database migration:
+
+  1. Backup your database first:
+     cp ./data/conversations.db ./data/conversations.db.backup
+
+  2. Run the migration:
+     sqlite3 ./data/conversations.db < migrations/002_advanced_learnings_schema.sql
+
+  ⚠️  WARNING: This migration will DROP the existing learnings table and all its data!
+
+  If you have important learnings data, you'll need to write a custom migration script
+  to preserve and transform your data. See migrations/002_advanced_learnings_schema.sql
+  for the new schema format.
+
+  3. After migration, re-extract learnings:
+     npm run extract-learnings
+
+For more information, see: migrations/README.md
+    `.trim())
+  }
+
+  // Schema is valid!
+}
+
+/**
  * Initialize database schema
  */
 export function initializeSchema(db: Database.Database): void {
   // Enable foreign keys
   db.pragma('foreign_keys = ON')
 
-  // Create tables
+  // Create core tables
   db.exec(CREATE_CONVERSATIONS_TABLE)
   db.exec(CREATE_CONVERSATIONS_INDEXES)
   db.exec(CREATE_MESSAGES_TABLE)
@@ -187,15 +302,15 @@ export function initializeSchema(db: Database.Database): void {
   db.exec(CREATE_MESSAGE_CHUNKS_TABLE)
   db.exec(CREATE_MESSAGE_CHUNKS_INDEXES)
 
-  // Learning tables
+  // Create archived learning tables (old schema preserved)
+  db.exec(CREATE_ARCHIVED_LEARNINGS_TABLE)
+  db.exec(CREATE_ARCHIVED_LEARNING_CATEGORIES_TABLE)
+  db.exec(CREATE_ARCHIVED_LEARNING_CATEGORY_ASSIGNMENTS_TABLE)
+  db.exec(CREATE_ARCHIVED_LEARNING_SOURCES_TABLE)
+
+  // Create new learning table (advanced schema)
   db.exec(CREATE_LEARNINGS_TABLE)
   db.exec(CREATE_LEARNINGS_INDEXES)
-  db.exec(CREATE_LEARNING_CATEGORIES_TABLE)
-  db.exec(CREATE_LEARNING_CATEGORIES_INDEXES)
-  db.exec(CREATE_LEARNING_CATEGORY_ASSIGNMENTS_TABLE)
-  db.exec(CREATE_LEARNING_CATEGORY_ASSIGNMENTS_INDEXES)
-  db.exec(CREATE_LEARNING_SOURCES_TABLE)
-  db.exec(CREATE_LEARNING_SOURCES_INDEXES)
 
   // Create FTS tables
   db.exec(CREATE_CONVERSATIONS_FTS)

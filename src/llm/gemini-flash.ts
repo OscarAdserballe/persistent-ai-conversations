@@ -53,6 +53,40 @@ export class GeminiFlash implements LLMModel {
     }
   }
 
+  async generateStructuredOutput<T>(
+    prompt: string,
+    context: string | undefined,
+    responseSchema: any
+  ): Promise<T> {
+    const model = this.client.getGenerativeModel({
+      model: this.model,
+      generationConfig: {
+        temperature: this.temperature,
+        maxOutputTokens: this.maxTokens,
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema
+      }
+    })
+
+    // Combine context and prompt
+    const fullPrompt = context ? `${context}\n\n${prompt}` : prompt
+
+    try {
+      const result = await model.generateContent(fullPrompt)
+
+      // Rate limiting between calls
+      await this.delay(this.rateLimitDelayMs)
+
+      const response = result.response
+      const text = response.text()
+      
+      // Parse JSON - should always be valid JSON since we specified responseMimeType
+      return JSON.parse(text) as T
+    } catch (error) {
+      throw new Error(`Gemini Flash structured generation failed: ${(error as Error).message}`)
+    }
+  }
+
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
   }

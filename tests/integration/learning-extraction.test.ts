@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createDatabase, closeDatabase } from '../../src/db/database'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { LearningExtractorImpl } from '../../src/services/learning-extractor'
-import { MockLLMModel, MockEmbeddingModel, createMockLearningResponse } from '../mocks'
+import { MockLLMModel, MockEmbeddingModel, createMockLearnings } from '../mocks'
 import Database from 'better-sqlite3'
 import type { Conversation } from '../../src/core/types'
 
@@ -34,8 +34,8 @@ describe('Learning Extraction Pipeline', () => {
     vectorStore = new SqliteVectorStore(db)
     vectorStore.initialize(embedder.dimensions)
 
-    // Create extractor
-    extractor = new LearningExtractorImpl(llm, embedder, vectorStore, db)
+    // Create extractor (no vector store parameter needed)
+    extractor = new LearningExtractorImpl(llm, embedder, db)
   })
 
   afterEach(() => {
@@ -77,12 +77,11 @@ describe('Learning Extraction Pipeline', () => {
   it('should extract and store learnings end-to-end', async () => {
     const conversation = createTestConversation()
 
-    // Configure LLM to return a learning
-    llm.setResponse(createMockLearningResponse([
+    // Configure LLM to return a learning with new schema
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'TypeScript Introduction',
-        content: 'TypeScript adds static typing to JavaScript for better tooling and safety.',
-        categories: ['programming', 'typescript']
+        tags: ['programming', 'typescript']
       }
     ]))
 
@@ -98,37 +97,30 @@ describe('Learning Extraction Pipeline', () => {
     // Verify learnings were returned
     expect(learnings).toHaveLength(1)
     expect(learnings[0].title).toBe('TypeScript Introduction')
+    expect(learnings[0].tags).toContain('programming')
+    expect(learnings[0].tags).toContain('typescript')
 
     // Verify learnings table
-    const storedLearnings = db.prepare('SELECT * FROM learnings').all()
+    const storedLearnings = db.prepare('SELECT * FROM learnings').all() as any[]
     expect(storedLearnings).toHaveLength(1)
     expect(storedLearnings[0].title).toBe('TypeScript Introduction')
-    expect(storedLearnings[0].content).toBe('TypeScript adds static typing to JavaScript for better tooling and safety.')
 
-    // Verify categories table
-    const categories = db.prepare('SELECT * FROM learning_categories').all()
-    expect(categories).toHaveLength(2)
-    const categoryNames = categories.map((c: any) => c.name).sort()
-    expect(categoryNames).toEqual(['programming', 'typescript'])
+    // Verify tags are stored as JSON
+    const tags = JSON.parse(storedLearnings[0].tags)
+    expect(tags).toContain('programming')
+    expect(tags).toContain('typescript')
 
-    // Verify category assignments
-    const assignments = db.prepare('SELECT * FROM learning_category_assignments').all()
-    expect(assignments).toHaveLength(2)
-
-    // Verify sources table
-    const sources = db.prepare('SELECT * FROM learning_sources').all()
-    expect(sources).toHaveLength(1)
-    expect(sources[0].conversation_uuid).toBe('test-conv-1')
+    // Verify conversation link
+    expect(storedLearnings[0].conversation_uuid).toBe('test-conv-1')
   })
 
-  it('should create categories on first use', async () => {
+  it('should store tags as JSON array', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Content',
-        categories: ['brand-new-category']
+        tags: ['tag1', 'tag2', 'tag3']
       }
     ]))
 
@@ -139,29 +131,25 @@ describe('Learning Extraction Pipeline', () => {
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
     // Extract
-    await extractor.extractFromConversation(conversation)
+    const learnings = await extractor.extractFromConversation(conversation)
 
-    // Verify category was created
-    const categories = db.prepare('SELECT * FROM learning_categories WHERE name = ?').all('brand-new-category')
-    expect(categories).toHaveLength(1)
-    expect(categories[0].name).toBe('brand-new-category')
+    // Verify tags in returned learning
+    expect(learnings[0].tags).toHaveLength(3)
+    expect(learnings[0].tags).toContain('tag1')
+
+    // Verify tags in database
+    const storedLearnings = db.prepare('SELECT tags FROM learnings').all() as any[]
+    const tags = JSON.parse(storedLearnings[0].tags)
+    expect(tags).toHaveLength(3)
   })
 
-  it('should reuse existing categories', async () => {
+  it('should handle learnings without tags', async () => {
     const conversation = createTestConversation()
 
-    // Insert existing category
-    const existingCategoryId = 'existing-cat-id'
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, created_at)
-      VALUES (?, ?, datetime('now'))
-    `).run(existingCategoryId, 'existing-category')
-
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Content',
-        categories: ['existing-category']
+        tags: []
       }
     ]))
 
@@ -172,27 +160,23 @@ describe('Learning Extraction Pipeline', () => {
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
     // Extract
-    await extractor.extractFromConversation(conversation)
+    const learnings = await extractor.extractFromConversation(conversation)
 
-    // Verify category was reused (still only 1 category)
-    const categories = db.prepare('SELECT * FROM learning_categories').all()
-    expect(categories).toHaveLength(1)
-    expect(categories[0].category_id).toBe(existingCategoryId)
+    // Verify empty tags array
+    expect(learnings[0].tags).toEqual([])
   })
 
-  it('should handle concurrent category creation', async () => {
+  it('should handle multiple learnings with shared tags', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Learning 1',
-        content: 'Content 1',
-        categories: ['concurrent-cat']
+        tags: ['shared-tag', 'tag1']
       },
       {
         title: 'Learning 2',
-        content: 'Content 2',
-        categories: ['concurrent-cat']
+        tags: ['shared-tag', 'tag2']
       }
     ]))
 
@@ -202,30 +186,22 @@ describe('Learning Extraction Pipeline', () => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
-    // Extract (both learnings try to create same category)
-    await extractor.extractFromConversation(conversation)
+    // Extract
+    const learnings = await extractor.extractFromConversation(conversation)
 
-    // Category should only be created once
-    const categories = db.prepare('SELECT * FROM learning_categories WHERE name = ?').all('concurrent-cat')
-    expect(categories).toHaveLength(1)
-
-    // Both learnings should be assigned to it
-    const assignments = db.prepare(`
-      SELECT * FROM learning_category_assignments lca
-      JOIN learning_categories lc ON lca.category_id = lc.category_id
-      WHERE lc.name = ?
-    `).all('concurrent-cat')
-    expect(assignments).toHaveLength(2)
+    // Verify both learnings have the shared tag
+    expect(learnings).toHaveLength(2)
+    expect(learnings[0].tags).toContain('shared-tag')
+    expect(learnings[1].tags).toContain('shared-tag')
   })
 
   it('should generate valid embeddings', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Test content',
-        categories: []
+        tags: []
       }
     ]))
 
@@ -251,10 +227,10 @@ describe('Learning Extraction Pipeline', () => {
   it('should batch embed multiple learnings', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
-      { title: 'Learning 1', content: 'Content 1', categories: [] },
-      { title: 'Learning 2', content: 'Content 2', categories: [] },
-      { title: 'Learning 3', content: 'Content 3', categories: [] }
+    llm.setStructuredResponse(createMockLearnings([
+      { title: 'Learning 1', tags: [] },
+      { title: 'Learning 2', tags: [] },
+      { title: 'Learning 3', tags: [] }
     ]))
 
     // Insert conversation
@@ -279,11 +255,10 @@ describe('Learning Extraction Pipeline', () => {
   it('should link to source conversation', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Content',
-        categories: []
+        tags: []
       }
     ]))
 
@@ -294,23 +269,23 @@ describe('Learning Extraction Pipeline', () => {
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
     // Extract
-    await extractor.extractFromConversation(conversation)
+    const learnings = await extractor.extractFromConversation(conversation)
 
-    // Verify source link
-    const sources = db.prepare('SELECT * FROM learning_sources').all()
-    expect(sources).toHaveLength(1)
-    expect(sources[0].conversation_uuid).toBe('test-conv-1')
-    expect(sources[0].learning_id).toBeDefined()
+    // Verify source link in returned learning
+    expect(learnings[0].conversationUuid).toBe('test-conv-1')
+
+    // Verify stored in database
+    const storedLearnings = db.prepare('SELECT conversation_uuid FROM learnings').all() as any[]
+    expect(storedLearnings[0].conversation_uuid).toBe('test-conv-1')
   })
 
-  it('should assign categories correctly', async () => {
+  it('should store advanced schema fields', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Content',
-        categories: ['cat-a', 'cat-b', 'cat-c']
+        tags: ['tag-a', 'tag-b', 'tag-c']
       }
     ]))
 
@@ -321,20 +296,16 @@ describe('Learning Extraction Pipeline', () => {
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
     // Extract
-    await extractor.extractFromConversation(conversation)
+    const learnings = await extractor.extractFromConversation(conversation)
 
-    // Verify 3 categories created
-    const categories = db.prepare('SELECT * FROM learning_categories').all()
-    expect(categories).toHaveLength(3)
-
-    // Verify 3 assignments created
-    const assignments = db.prepare('SELECT * FROM learning_category_assignments').all()
-    expect(assignments).toHaveLength(3)
-
-    // Verify all assignments link to same learning
-    const learningIds = assignments.map((a: any) => a.learning_id)
-    const uniqueLearningIds = new Set(learningIds)
-    expect(uniqueLearningIds.size).toBe(1)
+    // Verify advanced schema fields are present
+    expect(learnings[0].abstraction).toBeDefined()
+    expect(learnings[0].abstraction.concrete).toBeDefined()
+    expect(learnings[0].abstraction.pattern).toBeDefined()
+    expect(learnings[0].understanding).toBeDefined()
+    expect(learnings[0].understanding.confidence).toBeGreaterThan(0)
+    expect(learnings[0].effort).toBeDefined()
+    expect(learnings[0].resonance).toBeDefined()
   })
 
   it('should handle empty learnings response', async () => {
@@ -359,10 +330,11 @@ describe('Learning Extraction Pipeline', () => {
     expect(storedLearnings).toHaveLength(0)
   })
 
-  it('should handle invalid JSON gracefully', async () => {
+  it('should throw ZodError for invalid structured output', async () => {
     const conversation = createTestConversation()
 
-    llm.setInvalidJSON()
+    // Set invalid structured response (missing required fields)
+    llm.setStructuredResponse([{ invalid: 'data' }])
 
     // Insert conversation
     db.prepare(`
@@ -370,18 +342,16 @@ describe('Learning Extraction Pipeline', () => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
 
-    // Extract should not throw
-    const learnings = await extractor.extractFromConversation(conversation)
-
-    expect(learnings).toEqual([])
+    // Extract should throw ZodError
+    await expect(extractor.extractFromConversation(conversation)).rejects.toThrow()
   })
 
   it('should generate UUID for learnings', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
-      { title: 'Learning 1', content: 'Content 1', categories: [] },
-      { title: 'Learning 2', content: 'Content 2', categories: [] }
+    llm.setStructuredResponse(createMockLearnings([
+      { title: 'Learning 1', tags: [] },
+      { title: 'Learning 2', tags: [] }
     ]))
 
     // Insert conversation
@@ -404,14 +374,13 @@ describe('Learning Extraction Pipeline', () => {
     expect(learnings[0].learning_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   })
 
-  it('should generate UUID for categories', async () => {
+  it('should store embeddings in database', async () => {
     const conversation = createTestConversation()
 
-    llm.setResponse(createMockLearningResponse([
+    llm.setStructuredResponse(createMockLearnings([
       {
         title: 'Test Learning',
-        content: 'Content',
-        categories: ['category-1', 'category-2']
+        tags: []
       }
     ]))
 
@@ -424,48 +393,17 @@ describe('Learning Extraction Pipeline', () => {
     // Extract
     await extractor.extractFromConversation(conversation)
 
-    // Verify UUIDs are generated for categories
-    const categories = db.prepare('SELECT category_id FROM learning_categories').all()
-    expect(categories).toHaveLength(2)
-    expect(categories[0].category_id).toBeDefined()
-    expect(categories[1].category_id).toBeDefined()
-    expect(categories[0].category_id).not.toBe(categories[1].category_id)
-
-    // Verify UUID format
-    expect(categories[0].category_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-  })
-
-  it('should insert embeddings into vector store', async () => {
-    const conversation = createTestConversation()
-
-    llm.setResponse(createMockLearningResponse([
-      {
-        title: 'Test Learning',
-        content: 'Test content',
-        categories: []
-      }
-    ]))
-
-    // Insert conversation
-    db.prepare(`
-      INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(conversation.uuid, conversation.title, new Date().toISOString(), new Date().toISOString(), conversation.platform, conversation.messages.length)
-
-    // Extract
-    await extractor.extractFromConversation(conversation)
-
-    // Verify vector store received embedding (through insert method)
-    // This is validated by the vector store insert call in the extractor
-    const learnings = db.prepare('SELECT learning_id FROM learnings').all()
+    // Verify embeddings stored in database
+    const learnings = db.prepare('SELECT learning_id, embedding FROM learnings').all()
     expect(learnings).toHaveLength(1)
+    expect(learnings[0].embedding).toBeDefined()
   })
 
   it('should handle multiple extractions sequentially', async () => {
     // First extraction
     const conv1 = createTestConversation()
-    llm.setResponse(createMockLearningResponse([
-      { title: 'Learning 1', content: 'Content 1', categories: ['shared-category'] }
+    llm.setStructuredResponse(createMockLearnings([
+      { title: 'Learning 1', tags: ['shared-tag'] }
     ]))
 
     db.prepare(`
@@ -475,12 +413,12 @@ describe('Learning Extraction Pipeline', () => {
 
     await extractor.extractFromConversation(conv1)
 
-    // Second extraction (should reuse category)
+    // Second extraction
     const conv2 = { ...createTestConversation(), uuid: 'test-conv-2' }
     conv2.messages = conv2.messages.map(m => ({ ...m, conversationUuid: 'test-conv-2' }))
 
-    llm.setResponse(createMockLearningResponse([
-      { title: 'Learning 2', content: 'Content 2', categories: ['shared-category'] }
+    llm.setStructuredResponse(createMockLearnings([
+      { title: 'Learning 2', tags: ['shared-tag'] }
     ]))
 
     db.prepare(`
@@ -490,13 +428,13 @@ describe('Learning Extraction Pipeline', () => {
 
     await extractor.extractFromConversation(conv2)
 
-    // Verify category was reused
-    const categories = db.prepare('SELECT * FROM learning_categories').all()
-    expect(categories).toHaveLength(1)
-    expect(categories[0].name).toBe('shared-category')
-
     // Verify 2 learnings created
     const learnings = db.prepare('SELECT * FROM learnings').all()
+    expect(learnings).toHaveLength(2)
+
+    // Both can have same tag (no deduplication needed for tags)
+    const learning1 = await extractor.extractFromConversation(conv1)
+    // Just verify both were stored
     expect(learnings).toHaveLength(2)
   })
 })

@@ -2,10 +2,16 @@
 
 import { Command } from "commander";
 import * as fs from "fs";
+import pLimit from "p-limit";
 import { loadConfig } from "../config";
 import { createDatabase } from "../db/database";
 import { createLearningExtractor } from "../factories";
-import type { Conversation, Message, Learning } from "../core/types";
+import type {
+  Conversation,
+  Message,
+  Learning,
+  LearningExtractor,
+} from "../core/types";
 
 const program = new Command();
 
@@ -70,75 +76,139 @@ program
         ORDER BY created_at DESC
       `
           )
-          .all(start.toISOString(), end.toISOString()) as Conversation[];
+          .all(start.toISOString(), end.toISOString()) as any[];
 
         const total = conversations.length;
         console.log(`Processing ${total} conversations...\n`);
 
-        // Extract learnings from each conversation
-        const allLearnings: Learning[] = [];
-        for (let i = 0; i < conversations.length; i++) {
-          const conv = conversations[i];
+        // Create semaphore with limit of 10 concurrent operations
+        const limit = pLimit(10);
 
-          // Fetch full conversation with messages
-          const messagesRaw = db
-            .prepare(
-              `
-          SELECT * FROM messages
-          WHERE conversation_uuid = ?
-          ORDER BY conversation_index ASC
-        `
-            )
-            .all(conv.uuid) as any[];
+        // Helper function to extract with retry logic
+        const extractWithRetry = async (
+          extractor: LearningExtractor,
+          conversation: Conversation,
+          maxRetries = 3
+        ): Promise<Learning[]> => {
+          let lastError: Error | undefined;
 
-          // Parse message dates (database returns ISO strings)
-          const messages: Message[] = messagesRaw.map((msg) => ({
-            ...msg,
-            createdAt: new Date(msg.created_at),
-            conversationUuid: msg.conversation_uuid,
-            conversationIndex: msg.conversation_index,
-            metadata: {},
-          }));
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              return await extractor.extractFromConversation(conversation);
+            } catch (error) {
+              lastError = error as Error;
 
-          const fullConv: Conversation = {
-            uuid: conv.uuid,
-            title: conv.title,
-            platform: conv.platform,
-            messages,
-            createdAt: new Date(conv.createdAt),
-            updatedAt: new Date(conv.updatedAt),
-            metadata: {},
-          };
+              // Check if it's a rate limit error
+              const isRateLimit =
+                lastError.message.includes("429") ||
+                lastError.message.includes("rate limit");
 
-          const learnings = await extractor.extractFromConversation(fullConv);
-          allLearnings.push(...learnings);
+              if (attempt < maxRetries) {
+                // Exponential backoff: 2^attempt seconds
+                const delayMs = Math.pow(2, attempt) * 1000;
+                console.log(
+                  `  Retry ${attempt}/${maxRetries} after ${delayMs}ms... (${lastError.message.substring(
+                    0,
+                    50
+                  )})`
+                );
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+              }
+            }
+          }
 
-          // Progress logging with counter
-          console.log(
-            `[${i + 1}/${total}] Extracted ${
-              learnings.length
-            } learnings from "${conv.title}"`
+          // After max retries, throw
+          throw new Error(
+            `Failed after ${maxRetries} attempts: ${lastError!.message}`
           );
-        }
+        };
+
+        // Convert to promises with concurrency control
+        const extractionPromises = conversations.map((conv, i) =>
+          limit(async () => {
+            // Check if already processed
+            const existing = db
+              .prepare(
+                `
+              SELECT COUNT(*) as count FROM learnings 
+              WHERE conversation_uuid = ?
+            `
+              )
+              .get(conv.uuid) as { count: number };
+
+            if (existing.count > 0) {
+              console.log(
+                `[${i + 1}/${total}] ⊘ Skipping "${
+                  conv.name
+                }" (already processed)`
+              );
+              return [];
+            }
+
+            try {
+              // Fetch messages
+              const messagesRaw = db
+                .prepare(
+                  `
+                SELECT * FROM messages 
+                WHERE conversation_uuid = ? 
+                ORDER BY conversation_index ASC
+              `
+                )
+                .all(conv.uuid) as any[];
+
+              const messages: Message[] = messagesRaw.map((msg) => ({
+                ...msg,
+                createdAt: new Date(msg.created_at),
+                conversationUuid: msg.conversation_uuid,
+                conversationIndex: msg.conversation_index,
+                metadata: {},
+              }));
+
+              const fullConv: Conversation = {
+                uuid: conv.uuid,
+                title: conv.name,
+                platform: conv.platform,
+                messages,
+                createdAt: new Date(conv.created_at),
+                updatedAt: new Date(conv.updated_at),
+                metadata: {},
+              };
+
+              // Extract with retry
+              const learnings = await extractWithRetry(extractor, fullConv);
+
+              console.log(
+                `[${i + 1}/${total}] ✓ Extracted ${
+                  learnings.length
+                } learnings from "${conv.name}"`
+              );
+              return learnings;
+            } catch (error) {
+              console.error(
+                `[${i + 1}/${total}] ✗ Failed "${conv.name}": ${
+                  (error as Error).message
+                }`
+              );
+              return []; // Return empty, don't crash entire process
+            }
+          })
+        );
+
+        // Wait for all to complete
+        const results = await Promise.all(extractionPromises);
+        const allLearnings = results.flat();
 
         console.log(`\n✓ Extracted ${allLearnings.length} learnings total`);
-
-        // Generate markdown diary
-        const diary = generateMarkdownDiary(allLearnings, start, end);
-        fs.writeFileSync(options.output, diary);
-
-        console.log(`\n✓ Diary saved to ${options.output}`);
 
         if (allLearnings.length > 0) {
           console.log("\nSample learnings:");
 
           // Show first 3 learnings
           for (const learning of allLearnings.slice(0, 3)) {
-            const categoryNames = learning.categories
-              .map((c) => c.name)
-              .join(", ");
-            console.log(`\n[${categoryNames}] ${learning.title}`);
-            console.log(learning.content);
+            const tagNames = learning.tags.join(", ");
+            console.log(`\n[${tagNames}] ${learning.title}`);
+            console.log(learning.insight);
           }
         }
 
@@ -159,64 +229,3 @@ program
   );
 
 program.parse();
-
-/**
- * Generate markdown diary grouped by date.
- */
-function generateMarkdownDiary(
-  learnings: Learning[],
-  start: Date,
-  end: Date
-): string {
-  // Group learnings by date
-  const byDate = new Map<string, Learning[]>();
-
-  for (const learning of learnings) {
-    const dateKey = learning.createdAt.toISOString().split("T")[0];
-    if (!byDate.has(dateKey)) {
-      byDate.set(dateKey, []);
-    }
-    byDate.get(dateKey)!.push(learning);
-  }
-
-  // Sort dates descending
-  const sortedDates = Array.from(byDate.keys()).sort().reverse();
-
-  // Build markdown
-  let md = `# Learning Diary\n\n`;
-  md += `**Period:** ${start.toISOString().split("T")[0]} to ${
-    end.toISOString().split("T")[0]
-  }\n`;
-  md += `**Total Learnings:** ${learnings.length}\n\n`;
-  md += `---\n\n`;
-
-  for (const date of sortedDates) {
-    const dateLearnings = byDate.get(date)!;
-    md += `## ${date}\n\n`;
-
-    for (const learning of dateLearnings) {
-      md += `### ${learning.title}\n\n`;
-
-      // Handle multiple categories
-      if (learning.categories.length > 0) {
-        const categoryNames = learning.categories.map((c) => c.name).join(", ");
-        md += `**Categories:** ${categoryNames}\n\n`;
-      }
-
-      md += `${learning.content}\n\n`;
-
-      // Add source links
-      if (learning.sources.length > 0) {
-        md += `**Sources:**\n`;
-        for (const source of learning.sources) {
-          md += `- Conversation: \`${source.conversationUuid}\`\n`;
-        }
-        md += `\n`;
-      }
-
-      md += `---\n\n`;
-    }
-  }
-
-  return md;
-}

@@ -121,7 +121,7 @@ export function createLearningExtractor(config: Config, db?: Database.Database):
   // Initialize vector store with embedding dimensions
   vectorStore.initialize(embedder.dimensions)
 
-  return new LearningExtractorImpl(llm, embedder, vectorStore, database)
+  return new LearningExtractorImpl(llm, embedder, database)
 }
 
 /**

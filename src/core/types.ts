@@ -112,6 +112,15 @@ export interface LLMModel {
   generateText(prompt: string, context?: string): Promise<string>
 
   /**
+   * Generate structured output with schema validation.
+   * @param prompt - The instruction prompt
+   * @param context - Optional context (e.g., full conversation)
+   * @param responseSchema - Schema definition in provider-specific format
+   * @returns Parsed object matching the schema
+   */
+  generateStructuredOutput<T>(prompt: string, context: string | undefined, responseSchema: any): Promise<T>
+
+  /**
    * Model identifier (e.g., "gemini-1.5-flash")
    */
   readonly model: string
@@ -185,7 +194,7 @@ export interface SearchOptions {
 }
 
 // ============================================================================
-// Learning Extraction
+// Learning Extraction (Advanced Schema)
 // ============================================================================
 
 /**
@@ -203,30 +212,82 @@ export interface LearningExtractor {
 
 /**
  * A distilled learning extracted from conversations.
+ * Uses advanced epistemic introspection framework.
  */
 export interface Learning {
   learningId: string             // Unique learning ID (UUID)
-  title: string                  // Brief title (max 100 chars)
-  content: string                // Detailed explanation (2-3 sentences)
-  categories: Category[]         // Dynamic categories (many-to-many)
-  createdAt: Date
-  sources: LearningSource[]      // Link to source conversations/messages
-}
 
-export interface LearningSource {
-  conversationUuid: string
-  messageUuids?: string[]        // Specific messages if identifiable
+  // Core learning capture
+  title: string                  // Scannable summary (max 100 chars)
+  context: string                // What triggered this learning
+  insight: string                // What was discovered
+  why: string                    // Explanation of WHY this is true
+  implications: string           // When/how to apply this
+  tags: string[]                 // Free-form tags for retrieval
+
+  // Abstraction ladder
+  abstraction: Abstraction
+
+  // Metacognitive assessment
+  understanding: Understanding
+
+  // Learning effort
+  effort: Effort
+
+  // Emotional context
+  resonance: Resonance
+
+  // Learning classification
+  learningType?: LearningType
+  sourceCredit?: string          // If insight came from someone else
+
+  // Source tracking (simplified)
+  conversationUuid?: string      // Source conversation
+
+  // Metadata
+  createdAt: Date
+  embedding?: Float32Array       // Vector embedding (populated separately)
 }
 
 /**
- * Dynamic category - user-defined and evolvable.
+ * Abstraction ladder: concrete → pattern → principle
  */
-export interface Category {
-  categoryId: string             // Category ID (UUID)
-  name: string                   // Category name (e.g., "software-architecture")
-  description?: string           // Optional description
-  createdAt: Date
+export interface Abstraction {
+  concrete: string               // Specific instance or example
+  pattern: string                // Generalizable pattern
+  principle?: string             // Universal principle (optional)
 }
+
+/**
+ * Metacognitive assessment of understanding depth
+ */
+export interface Understanding {
+  confidence: number             // 1-10: How well you understand this
+  canTeachIt: boolean            // Could you explain it to someone else?
+  knownGaps?: string[]           // What you still don't understand
+}
+
+/**
+ * Learning effort tracking
+ */
+export interface Effort {
+  processingTime: ProcessingTime
+  cognitiveLoad: CognitiveLoad
+}
+
+/**
+ * Emotional resonance tracking
+ */
+export interface Resonance {
+  intensity: number              // 1-10: How much this hit you
+  valence: Valence               // How it felt
+}
+
+// Type definitions
+export type LearningType = 'principle' | 'method' | 'anti_pattern' | 'exception'
+export type ProcessingTime = '5min' | '30min' | '2hr' | 'days'
+export type CognitiveLoad = 'easy' | 'moderate' | 'hard' | 'breakthrough'
+export type Valence = 'positive' | 'negative' | 'mixed'
 
 /**
  * Semantic search over learnings.
@@ -248,18 +309,18 @@ export interface LearningSearchOptions {
     start: Date
     end: Date
   }
-  categoryIds?: string[]         // Filter by category IDs
-  categoryNames?: string[]       // Filter by category names
+  tags?: string[]                // Filter by tags (OR matching)
+  learningType?: LearningType    // Filter by learning type
 }
 
 export interface LearningSearchResult {
   learning: Learning             // The matched learning
   score: number                  // Similarity score (0-1)
-  sourceConversations: {         // Source conversation metadata
+  sourceConversation?: {         // Source conversation metadata
     uuid: string
     title: string
     createdAt: Date
-  }[]
+  }
 }
 
 // ============================================================================

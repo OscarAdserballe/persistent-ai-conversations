@@ -34,42 +34,27 @@ export class LearningSearchImpl implements LearningSearch {
       'learnings',
       'learning_id',
       queryVector,
-      limit
+      limit * 2  // Over-fetch to allow for filtering
     )
 
     if (vectorResults.length === 0) {
       return []
     }
 
-    // 3. Create temp table with scores to preserve relevance ordering
-    this.db.exec('CREATE TEMP TABLE IF NOT EXISTS temp_learning_scores (id TEXT PRIMARY KEY, score REAL)')
-    this.db.exec('DELETE FROM temp_learning_scores')  // Clear previous search
+    // 3. Fetch learning details and apply filters
+    const learningIds = vectorResults.map(r => r.id)
+    const placeholders = learningIds.map(() => '?').join(',')
 
-    const insertScore = this.db.prepare('INSERT INTO temp_learning_scores VALUES (?, ?)')
-    const insertScores = this.db.transaction((results: typeof vectorResults) => {
-      for (const result of results) {
-        insertScore.run(result.id, result.score)
-      }
-    })
-    insertScores(vectorResults)
-
-    // 4. Build query with filters, preserving relevance order
     let sql = `
-      SELECT DISTINCT
+      SELECT
         l.*,
-        tls.score,
-        lc.category_id, lc.name as cat_name, lc.description as cat_desc,
         c.uuid as conv_uuid, c.name as conv_title, c.created_at as conv_date
       FROM learnings l
-      JOIN temp_learning_scores tls ON l.learning_id = tls.id
-      LEFT JOIN learning_category_assignments lca ON l.learning_id = lca.learning_id
-      LEFT JOIN learning_categories lc ON lca.category_id = lc.category_id
-      LEFT JOIN learning_sources ls ON l.learning_id = ls.learning_id
-      LEFT JOIN conversations c ON ls.conversation_uuid = c.uuid
-      WHERE 1=1
+      LEFT JOIN conversations c ON l.conversation_uuid = c.uuid
+      WHERE l.learning_id IN (${placeholders})
     `
 
-    const params: any[] = []
+    const params: any[] = [...learningIds]
 
     // Apply date filter
     if (options?.dateRange) {
@@ -77,60 +62,86 @@ export class LearningSearchImpl implements LearningSearch {
       params.push(options.dateRange.start.toISOString(), options.dateRange.end.toISOString())
     }
 
-    // Apply category filter
-    if (options?.categoryNames && options.categoryNames.length > 0) {
-      const placeholders = options.categoryNames.map(() => '?').join(',')
-      sql += ` AND lc.name IN (${placeholders})`
-      params.push(...options.categoryNames)
+    // Apply learning type filter
+    if (options?.learningType) {
+      sql += ` AND l.learning_type = ?`
+      params.push(options.learningType)
     }
-
-    // IMPORTANT: Preserve relevance order from vector search
-    sql += ` ORDER BY tls.score DESC`
 
     const rows = this.db.prepare(sql).all(...params) as any[]
 
-    // 5. Group results by learning
-    const learningMap = new Map<string, LearningSearchResult>()
+    // 4. Parse JSON fields and apply tag filter
+    const results: LearningSearchResult[] = []
+    const scoreMap = new Map(vectorResults.map(r => [r.id, r.score]))
 
     for (const row of rows) {
-      if (!learningMap.has(row.learning_id)) {
-        learningMap.set(row.learning_id, {
-          learning: {
-            learningId: row.learning_id,
-            title: row.title,
-            content: row.content,
-            categories: [],
-            createdAt: new Date(row.created_at),
-            sources: []
-          },
-          score: row.score,  // Score now comes from JOIN with temp table
-          sourceConversations: []
-        })
+      const tags = JSON.parse(row.tags) as string[]
+
+      // Apply tag filter (OR logic: match any tag)
+      if (options?.tags && options.tags.length > 0) {
+        const hasMatchingTag = options.tags.some(filterTag =>
+          tags.some(learningTag => learningTag.toLowerCase().includes(filterTag.toLowerCase()))
+        )
+        if (!hasMatchingTag) {
+          continue
+        }
       }
 
-      const result = learningMap.get(row.learning_id)!
+      // Parse nested JSON objects
+      const abstraction = JSON.parse(row.abstraction)
+      const understanding = JSON.parse(row.understanding)
+      const effort = JSON.parse(row.effort)
+      const resonance = JSON.parse(row.resonance)
 
-      // Add category if present and not duplicate
-      if (row.category_id && !result.learning.categories.some(c => c.categoryId === row.category_id)) {
-        result.learning.categories.push({
-          categoryId: row.category_id,
-          name: row.cat_name,
-          description: row.cat_desc,
-          createdAt: new Date(row.created_at)
-        })
+      const learning: Learning = {
+        learningId: row.learning_id,
+        title: row.title,
+        context: row.context,
+        insight: row.insight,
+        why: row.why,
+        implications: row.implications,
+        tags,
+        abstraction: {
+          concrete: abstraction.concrete,
+          pattern: abstraction.pattern,
+          principle: abstraction.principle
+        },
+        understanding: {
+          confidence: understanding.confidence,
+          canTeachIt: understanding.canTeachIt,
+          knownGaps: understanding.knownGaps
+        },
+        effort: {
+          processingTime: effort.processingTime,
+          cognitiveLoad: effort.cognitiveLoad
+        },
+        resonance: {
+          intensity: resonance.intensity,
+          valence: resonance.valence
+        },
+        learningType: row.learning_type,
+        sourceCredit: row.source_credit,
+        conversationUuid: row.conversation_uuid,
+        createdAt: new Date(row.created_at)
       }
 
-      // Add source conversation if not duplicate
-      if (row.conv_uuid &&
-          !result.sourceConversations.some(c => c.uuid === row.conv_uuid)) {
-        result.sourceConversations.push({
+      const result: LearningSearchResult = {
+        learning,
+        score: scoreMap.get(row.learning_id) || 0,
+        sourceConversation: row.conv_uuid ? {
           uuid: row.conv_uuid,
           title: row.conv_title,
           createdAt: new Date(row.conv_date)
-        })
+        } : undefined
       }
+
+      results.push(result)
     }
 
-    return Array.from(learningMap.values())
+    // 5. Sort by score (preserve vector search relevance order)
+    results.sort((a, b) => b.score - a.score)
+
+    // 6. Apply limit after filtering
+    return results.slice(0, limit)
   }
 }

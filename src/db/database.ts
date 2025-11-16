@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { initializeSchema } from './schema'
+import { initializeSchema, validateLearningsSchema } from './schema'
 
 /**
  * Create and initialize a database connection
@@ -10,8 +10,11 @@ export function createDatabase(path: string): Database.Database {
   // Enable Write-Ahead Logging for better concurrency
   db.pragma('journal_mode = WAL')
 
-  // Initialize schema
+  // Initialize schema (creates tables if they don't exist)
   initializeSchema(db)
+
+  // Validate learnings schema (fails fast if outdated schema detected)
+  validateLearningsSchema(db)
 
   return db
 }

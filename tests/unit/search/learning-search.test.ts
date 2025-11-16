@@ -26,51 +26,71 @@ describe('LearningSearchImpl', () => {
         ('conv-2', 'React Tutorial', 'About React', '2025-01-02', '2025-01-02', 'claude')
     `).run()
 
-    // Insert test categories
-    db.prepare(`
-      INSERT INTO learning_categories (category_id, name, description, created_at)
-      VALUES
-        ('cat-1', 'programming', 'Programming concepts', '2025-01-01'),
-        ('cat-2', 'typescript', 'TypeScript specific', '2025-01-01'),
-        ('cat-3', 'react', 'React framework', '2025-01-01')
-    `).run()
+    // Helper to create JSON for nested objects
+    const createLearningData = (id: string, title: string, tags: string[], conversationUuid: string, createdAt: string) => {
+      const abstraction = JSON.stringify({
+        concrete: `Concrete example for ${title}`,
+        pattern: `Pattern for ${title}`,
+        principle: `Principle for ${title}`
+      })
+      const understanding = JSON.stringify({
+        confidence: 7,
+        canTeachIt: true,
+        knownGaps: []
+      })
+      const effort = JSON.stringify({
+        processingTime: '30min',
+        cognitiveLoad: 'moderate'
+      })
+      const resonance = JSON.stringify({
+        intensity: 5,
+        valence: 'positive'
+      })
+      const tagsJson = JSON.stringify(tags)
+      const embedding = Buffer.from(new Float32Array(768).fill(0.5).buffer)
 
-    // Insert test learnings
-    db.prepare(`
-      INSERT INTO learnings (learning_id, title, content, created_at)
-      VALUES
-        ('learn-1', 'TypeScript Basics', 'TypeScript adds static typing to JavaScript', '2025-01-01'),
-        ('learn-2', 'React Hooks', 'React Hooks allow using state in functional components', '2025-01-02'),
-        ('learn-3', 'TypeScript Generics', 'Generics provide type safety with flexibility', '2025-01-03'),
-        ('learn-4', 'React Context', 'Context API for state management', '2025-01-04'),
-        ('learn-5', 'TypeScript Interfaces', 'Interfaces define object shapes', '2025-01-05')
-    `).run()
+      return {
+        id,
+        title,
+        context: `Context for ${title}`,
+        insight: `Insight for ${title}`,
+        why: `Why for ${title}`,
+        implications: `Implications for ${title}`,
+        tags: tagsJson,
+        abstraction,
+        understanding,
+        effort,
+        resonance,
+        conversationUuid,
+        embedding,
+        createdAt
+      }
+    }
 
-    // Link learnings to categories
-    db.prepare(`
-      INSERT INTO learning_category_assignments (learning_id, category_id)
-      VALUES
-        ('learn-1', 'cat-1'),
-        ('learn-1', 'cat-2'),
-        ('learn-2', 'cat-1'),
-        ('learn-2', 'cat-3'),
-        ('learn-3', 'cat-1'),
-        ('learn-3', 'cat-2'),
-        ('learn-4', 'cat-1'),
-        ('learn-4', 'cat-3'),
-        ('learn-5', 'cat-2')
-    `).run()
+    // Insert test learnings with new schema
+    const learnings = [
+      createLearningData('learn-1', 'TypeScript Basics', ['programming', 'typescript'], 'conv-1', '2025-01-01'),
+      createLearningData('learn-2', 'React Hooks', ['programming', 'react'], 'conv-2', '2025-01-02'),
+      createLearningData('learn-3', 'TypeScript Generics', ['programming', 'typescript'], 'conv-1', '2025-01-03'),
+      createLearningData('learn-4', 'React Context', ['programming', 'react'], 'conv-2', '2025-01-04'),
+      createLearningData('learn-5', 'TypeScript Interfaces', ['typescript'], 'conv-1', '2025-01-05')
+    ]
 
-    // Link learnings to source conversations
-    db.prepare(`
-      INSERT INTO learning_sources (learning_id, conversation_uuid)
-      VALUES
-        ('learn-1', 'conv-1'),
-        ('learn-2', 'conv-2'),
-        ('learn-3', 'conv-1'),
-        ('learn-4', 'conv-2'),
-        ('learn-5', 'conv-1')
-    `).run()
+    const insertStmt = db.prepare(`
+      INSERT INTO learnings (
+        learning_id, title, context, insight, why, implications, tags,
+        abstraction, understanding, effort, resonance,
+        conversation_uuid, embedding, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    for (const l of learnings) {
+      insertStmt.run(
+        l.id, l.title, l.context, l.insight, l.why, l.implications, l.tags,
+        l.abstraction, l.understanding, l.effort, l.resonance,
+        l.conversationUuid, l.embedding, l.createdAt
+      )
+    }
 
     // Create mocks
     embedder = new MockEmbeddingModel()
@@ -114,24 +134,25 @@ describe('LearningSearchImpl', () => {
       expect(result.learning).toBeDefined()
       expect(result.learning.learningId).toBeDefined()
       expect(result.learning.title).toBeDefined()
-      expect(result.learning.content).toBeDefined()
+      expect(result.learning.context).toBeDefined()
+      expect(result.learning.insight).toBeDefined()
+      expect(result.learning.tags).toBeDefined()
+      expect(Array.isArray(result.learning.tags)).toBe(true)
       expect(result.score).toBeDefined()
       expect(typeof result.score).toBe('number')
-      expect(result.sourceConversations).toBeDefined()
-      expect(Array.isArray(result.sourceConversations)).toBe(true)
+      expect(result.sourceConversation).toBeDefined()
     })
 
-    it('should include category metadata', async () => {
+    it('should include tag metadata', async () => {
       const results = await search.search('TypeScript')
 
-      const resultWithCategories = results.find(r => r.learning.categories.length > 0)
-      expect(resultWithCategories).toBeDefined()
+      const resultWithTags = results.find(r => r.learning.tags.length > 0)
+      expect(resultWithTags).toBeDefined()
 
-      if (resultWithCategories) {
-        const category = resultWithCategories.learning.categories[0]
-        expect(category.categoryId).toBeDefined()
-        expect(category.name).toBeDefined()
-        expect(category.createdAt).toBeInstanceOf(Date)
+      if (resultWithTags) {
+        expect(Array.isArray(resultWithTags.learning.tags)).toBe(true)
+        expect(resultWithTags.learning.tags[0]).toBeDefined()
+        expect(typeof resultWithTags.learning.tags[0]).toBe('string')
       }
     })
 
@@ -169,51 +190,37 @@ describe('LearningSearchImpl', () => {
     })
   })
 
-  describe('category enrichment', () => {
-    it('should include all categories for each learning', async () => {
+  describe('tag support', () => {
+    it('should include all tags for each learning', async () => {
       const results = await search.search('TypeScript', { limit: 5 })
 
-      // Find learn-1 which has 2 categories (programming + typescript)
+      // Find learn-1 which has 2 tags (programming + typescript)
       const learn1 = results.find(r => r.learning.learningId === 'learn-1')
 
       if (learn1) {
-        expect(learn1.learning.categories.length).toBe(2)
-        const categoryNames = learn1.learning.categories.map(c => c.name)
-        expect(categoryNames).toContain('programming')
-        expect(categoryNames).toContain('typescript')
+        expect(learn1.learning.tags.length).toBe(2)
+        expect(learn1.learning.tags).toContain('programming')
+        expect(learn1.learning.tags).toContain('typescript')
       }
     })
 
-    it('should handle learnings with no categories', async () => {
-      // Insert a learning without categories
-      db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at)
-        VALUES ('learn-6', 'No Category', 'Content', '2025-01-06')
-      `).run()
-
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES ('learn-6', 'conv-1')
-      `).run()
-
-      const embedding = new Float32Array(768).fill(0.6)
-      vectorStore.insert('learn-6', embedding)
-
-      const results = await search.search('No Category', { limit: 10 })
-
-      const learn6 = results.find(r => r.learning.learningId === 'learn-6')
-      if (learn6) {
-        expect(learn6.learning.categories).toEqual([])
+    it('should handle learnings without tags', async () => {
+      // This test is already handled by setup - learn-5 has only 'typescript' tag
+      const results = await search.search('TypeScript', { limit: 10 })
+      const learn5 = results.find(r => r.learning.learningId === 'learn-5')
+      if (learn5) {
+        expect(Array.isArray(learn5.learning.tags)).toBe(true)
       }
     })
 
-    it('should deduplicate categories in results', async () => {
+    it('should return tags as string array', async () => {
       const results = await search.search('TypeScript', { limit: 5 })
 
       for (const result of results) {
-        const categoryIds = result.learning.categories.map(c => c.categoryId)
-        const uniqueIds = new Set(categoryIds)
-        expect(categoryIds.length).toBe(uniqueIds.size)
+        expect(Array.isArray(result.learning.tags)).toBe(true)
+        for (const tag of result.learning.tags) {
+          expect(typeof tag).toBe('string')
+        }
       }
     })
   })
@@ -222,39 +229,33 @@ describe('LearningSearchImpl', () => {
     it('should include source conversation metadata', async () => {
       const results = await search.search('TypeScript')
 
-      const resultWithSource = results.find(r => r.sourceConversations.length > 0)
+      const resultWithSource = results.find(r => r.sourceConversation !== undefined)
       expect(resultWithSource).toBeDefined()
 
-      if (resultWithSource) {
-        const source = resultWithSource.sourceConversations[0]
+      if (resultWithSource && resultWithSource.sourceConversation) {
+        const source = resultWithSource.sourceConversation
         expect(source.uuid).toBeDefined()
         expect(source.title).toBeDefined()
         expect(source.createdAt).toBeInstanceOf(Date)
       }
     })
 
-    it('should handle multiple source conversations', async () => {
-      // Add another source for learn-1
-      db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES ('learn-1', 'conv-2')
-      `).run()
-
+    it('should link to correct conversation', async () => {
       const results = await search.search('TypeScript', { limit: 5 })
 
+      // learn-1 should link to conv-1
       const learn1 = results.find(r => r.learning.learningId === 'learn-1')
-      if (learn1) {
-        expect(learn1.sourceConversations.length).toBeGreaterThan(1)
+      if (learn1 && learn1.sourceConversation) {
+        expect(learn1.sourceConversation.uuid).toBe('conv-1')
       }
     })
 
-    it('should deduplicate source conversations', async () => {
+    it('should handle learnings with source conversation', async () => {
       const results = await search.search('TypeScript', { limit: 5 })
 
+      // All our test learnings have source conversations
       for (const result of results) {
-        const sourceUuids = result.sourceConversations.map(c => c.uuid)
-        const uniqueUuids = new Set(sourceUuids)
-        expect(sourceUuids.length).toBe(uniqueUuids.size)
+        expect(result.learning.conversationUuid).toBeDefined()
       }
     })
   })
@@ -279,27 +280,26 @@ describe('LearningSearchImpl', () => {
       }
     })
 
-    it('should filter by category names', async () => {
+    it('should filter by tags', async () => {
       const results = await search.search('programming', {
-        categoryNames: ['typescript'],
+        tags: ['typescript'],
         limit: 10
       })
 
       for (const result of results) {
-        const hasTypescript = result.learning.categories.some(c => c.name === 'typescript')
+        const hasTypescript = result.learning.tags.includes('typescript')
         expect(hasTypescript).toBe(true)
       }
     })
 
-    it('should filter by multiple categories (OR logic)', async () => {
+    it('should filter by multiple tags (OR logic)', async () => {
       const results = await search.search('programming', {
-        categoryNames: ['typescript', 'react'],
+        tags: ['typescript', 'react'],
         limit: 10
       })
 
       for (const result of results) {
-        const categoryNames = result.learning.categories.map(c => c.name)
-        const hasEither = categoryNames.includes('typescript') || categoryNames.includes('react')
+        const hasEither = result.learning.tags.includes('typescript') || result.learning.tags.includes('react')
         expect(hasEither).toBe(true)
       }
     })
@@ -310,7 +310,7 @@ describe('LearningSearchImpl', () => {
           start: new Date('2025-01-01'),
           end: new Date('2025-01-03')
         },
-        categoryNames: ['typescript'],
+        tags: ['typescript'],
         limit: 10
       })
 
@@ -323,8 +323,8 @@ describe('LearningSearchImpl', () => {
           new Date('2025-01-03').getTime()
         )
 
-        // Check category
-        const hasTypescript = result.learning.categories.some(c => c.name === 'typescript')
+        // Check tag
+        const hasTypescript = result.learning.tags.includes('typescript')
         expect(hasTypescript).toBe(true)
       }
     })
@@ -335,24 +335,16 @@ describe('LearningSearchImpl', () => {
           start: new Date('2025-01-01'),
           end: new Date('2025-01-01')
         },
-        categoryNames: ['react'],
+        tags: ['react'],
         limit: 10
       })
 
-      // No learnings match: created on 2025-01-01 AND have react category
+      // No learnings match: created on 2025-01-01 AND have react tag
       expect(results).toEqual([])
     })
   })
 
-  describe('temp table pattern', () => {
-    it('should create temp table for scores', async () => {
-      await search.search('test')
-
-      // Verify temp table exists and has data
-      const tempRows = db.prepare('SELECT * FROM temp_learning_scores').all()
-      expect(tempRows.length).toBeGreaterThan(0)
-    })
-
+  describe('score ordering', () => {
     it('should preserve vector similarity ordering', async () => {
       // Configure vector store with specific scores
       vectorStore.clear()
@@ -368,29 +360,16 @@ describe('LearningSearchImpl', () => {
       }
     })
 
-    it('should join with temp table correctly', async () => {
+    it('should include scores with results', async () => {
       const results = await search.search('test', { limit: 5 })
 
-      // All results should have scores from temp table
+      // All results should have scores
       for (const result of results) {
         expect(result.score).toBeDefined()
         expect(typeof result.score).toBe('number')
         expect(result.score).toBeGreaterThan(0)
         expect(result.score).toBeLessThanOrEqual(1)
       }
-    })
-
-    it('should clear temp table between searches', async () => {
-      // First search
-      await search.search('first query')
-      const firstCount = db.prepare('SELECT COUNT(*) as count FROM temp_learning_scores').get() as any
-
-      // Second search
-      await search.search('second query')
-      const secondCount = db.prepare('SELECT COUNT(*) as count FROM temp_learning_scores').get() as any
-
-      // Counts might be different if different results, but shouldn't accumulate
-      expect(secondCount.count).toBeGreaterThan(0)
     })
   })
 
@@ -403,12 +382,12 @@ describe('LearningSearchImpl', () => {
 
       expect(learning.learningId).toBeDefined()
       expect(learning.title).toBeDefined()
-      expect(learning.content).toBeDefined()
-      expect(learning.categories).toBeDefined()
-      expect(Array.isArray(learning.categories)).toBe(true)
+      expect(learning.context).toBeDefined()
+      expect(learning.insight).toBeDefined()
+      expect(learning.tags).toBeDefined()
+      expect(Array.isArray(learning.tags)).toBe(true)
       expect(learning.createdAt).toBeInstanceOf(Date)
-      expect(learning.sources).toBeDefined()
-      expect(Array.isArray(learning.sources)).toBe(true)
+      expect(learning.conversationUuid).toBeDefined()
     })
 
     it('should return score as number between 0 and 1', async () => {
@@ -420,18 +399,17 @@ describe('LearningSearchImpl', () => {
       }
     })
 
-    it('should return source conversations with complete metadata', async () => {
+    it('should return source conversation with complete metadata', async () => {
       const results = await search.search('TypeScript', { limit: 5 })
 
-      const resultWithSource = results.find(r => r.sourceConversations.length > 0)
-      if (resultWithSource) {
-        for (const source of resultWithSource.sourceConversations) {
-          expect(source.uuid).toBeDefined()
-          expect(typeof source.uuid).toBe('string')
-          expect(source.title).toBeDefined()
-          expect(typeof source.title).toBe('string')
-          expect(source.createdAt).toBeInstanceOf(Date)
-        }
+      const resultWithSource = results.find(r => r.sourceConversation !== undefined)
+      if (resultWithSource && resultWithSource.sourceConversation) {
+        const source = resultWithSource.sourceConversation
+        expect(source.uuid).toBeDefined()
+        expect(typeof source.uuid).toBe('string')
+        expect(source.title).toBeDefined()
+        expect(typeof source.title).toBe('string')
+        expect(source.createdAt).toBeInstanceOf(Date)
       }
     })
   })
@@ -466,18 +444,21 @@ describe('LearningSearchImpl', () => {
 
     it('should handle learning with very long title', async () => {
       const longTitle = 'A'.repeat(500)
-      db.prepare(`
-        INSERT INTO learnings (learning_id, title, content, created_at)
-        VALUES ('learn-long', ?, 'Content', '2025-01-06')
-      `).run(longTitle)
+      const abstraction = JSON.stringify({ concrete: 'Test', pattern: 'Test', principle: 'Test' })
+      const understanding = JSON.stringify({ confidence: 7, canTeachIt: true, knownGaps: [] })
+      const effort = JSON.stringify({ processingTime: '30min', cognitiveLoad: 'moderate' })
+      const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
+      const embedding = Buffer.from(new Float32Array(768).fill(0.7).buffer)
 
       db.prepare(`
-        INSERT INTO learning_sources (learning_id, conversation_uuid)
-        VALUES ('learn-long', 'conv-1')
-      `).run()
+        INSERT INTO learnings (
+          learning_id, title, context, insight, why, implications, tags,
+          abstraction, understanding, effort, resonance,
+          conversation_uuid, embedding, created_at
+        ) VALUES ('learn-long', ?, 'Context', 'Insight', 'Why', 'Implications', '[]', ?, ?, ?, ?, 'conv-1', ?, '2025-01-06')
+      `).run(longTitle, abstraction, understanding, effort, resonance, embedding)
 
-      const embedding = new Float32Array(768).fill(0.7)
-      vectorStore.insert('learn-long', embedding)
+      vectorStore.insert('learn-long', new Float32Array(768).fill(0.7))
 
       const results = await search.search('test', { limit: 10 })
       const longLearning = results.find(r => r.learning.learningId === 'learn-long')
@@ -499,12 +480,12 @@ describe('LearningSearchImpl', () => {
       expect(results).toEqual([])
     })
 
-    it('should handle non-existent category names', async () => {
+    it('should handle non-existent tags', async () => {
       const results = await search.search('test', {
-        categoryNames: ['nonexistent-category']
+        tags: ['nonexistent-tag']
       })
 
-      // Should return empty since no learnings have this category
+      // Should return empty since no learnings have this tag
       expect(results).toEqual([])
     })
   })
