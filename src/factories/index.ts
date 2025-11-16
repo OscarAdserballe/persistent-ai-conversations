@@ -202,12 +202,12 @@ export function createLearningExtractor(config: Config, db?: DrizzleDB): Learnin
   const llm = createLLMModel(config)
   const embedder = createEmbeddingModel(config)
   const vectorStore = createVectorStore(database)
-  const rawDb = getRawDb(database)
 
   // Initialize vector store with embedding dimensions
   vectorStore.initialize(embedder.dimensions)
 
-  return new LearningExtractorImpl(llm, embedder, rawDb)
+  // Pass DrizzleDB directly - service uses type-safe queries now!
+  return new LearningExtractorImpl(llm, embedder, database)
 }
 
 /**
@@ -218,10 +218,10 @@ export function createLearningSearch(config: Config, db?: DrizzleDB): LearningSe
   const database = db || createDatabase(config.db.path)
   const embedder = createEmbeddingModel(config)
   const vectorStore = createVectorStore(database)
-  const rawDb = getRawDb(database)
 
   // Initialize vector store with embedding dimensions
   vectorStore.initialize(embedder.dimensions)
 
-  return new LearningSearchImpl(embedder, vectorStore, rawDb)
+  // Pass DrizzleDB directly - service uses type-safe queries now!
+  return new LearningSearchImpl(embedder, vectorStore, database)
 }

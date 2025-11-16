@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import { loadConfig } from '../config'
-import { createDatabase } from '../db/database'
 import { createLearningSearch } from '../factories'
 import { Learning } from '../core/types'
 

@@ -4,7 +4,6 @@ import { Command } from "commander";
 import * as fs from "fs";
 import pLimit from "p-limit";
 import { loadConfig } from "../config";
-import { createDatabase } from "../db/database";
 import { createLearningExtractor } from "../factories";
 import type {
   Conversation,

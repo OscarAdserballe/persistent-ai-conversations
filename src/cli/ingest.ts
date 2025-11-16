@@ -2,8 +2,8 @@
 
 import { Command } from 'commander'
 import { loadConfig } from '../config'
-import { createDatabase } from '../db/database'
-import { createEmbeddingModel, createVectorStore, createImporter } from '../factories'
+import { createDatabase, createEmbeddingModel, createVectorStore, createImporter } from '../factories'
+import { getRawDb } from '../db/client'
 import { SQL } from '../db/schema'
 import { chunkText } from '../utils/chunking'
 
@@ -23,14 +23,15 @@ program
       const config = loadConfig(options.config)
       console.log(`✓ Loaded configuration from ${options.config}`)
 
-      // Create database connection
-      const db = createDatabase(config.db.path)
+      // Create database connection (returns DrizzleDB now)
+      const drizzleDb = createDatabase(config.db.path)
+      const db = getRawDb(drizzleDb) // Extract raw DB for legacy SQL usage
       console.log(`✓ Connected to database: ${config.db.path}`)
 
       // Create components
       const importer = createImporter(options.platform)
       const embedder = createEmbeddingModel(config)
-      const vectorStore = createVectorStore(db)
+      const vectorStore = createVectorStore(drizzleDb)
       vectorStore.initialize(embedder.dimensions)
       console.log(`✓ Initialized embedding model (${embedder.dimensions} dimensions)\n`)
 

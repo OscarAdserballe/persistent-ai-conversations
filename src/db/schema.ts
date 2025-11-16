@@ -367,3 +367,22 @@ export function validateLearningsSchema(_db: Database.Database): void {
   // Schema validation is now handled by Drizzle
   // This function is deprecated but kept for tests during migration
 }
+
+/**
+ * @deprecated Legacy SQL constants for CLI during migration. Use Drizzle queries instead.
+ * These will be removed in Phase 4 when CLI is migrated.
+ */
+export const SQL = {
+  INSERT_CONVERSATION: `
+    INSERT OR IGNORE INTO conversations (uuid, name, summary, created_at, updated_at, platform, message_count, embedding)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+  INSERT_MESSAGE: `
+    INSERT OR IGNORE INTO messages (uuid, conversation_uuid, conversation_index, sender, text, created_at, chunk_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `,
+  INSERT_CHUNK: `
+    INSERT OR IGNORE INTO message_chunks (message_uuid, chunk_index, text, char_count, embedding)
+    VALUES (?, ?, ?, ?, ?)
+  `
+}

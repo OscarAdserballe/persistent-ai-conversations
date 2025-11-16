@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import { loadConfig } from '../config'
-import { createDatabase } from '../db/database'
 import { createSearchEngine } from '../factories'
 
 const program = new Command()

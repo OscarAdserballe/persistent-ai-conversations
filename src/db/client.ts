@@ -30,19 +30,20 @@ export function getRawDb(db: DrizzleDB): Database.Database {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyDb = db as any
 
-  // drizzle-orm 0.44+ structure: db._.session
-  if (anyDb._ && anyDb._.session) {
-    return anyDb._.session
-  }
+  // Try various paths to find the raw Database instance
+  const candidates = [
+    anyDb._.session?.client,  // drizzle-orm 0.44+ newer structure
+    anyDb._.session,           // drizzle-orm 0.44+
+    anyDb.session?.client,     // With client wrapper
+    anyDb.session?.db,         // Older structure
+    anyDb.session,             // Direct session
+    anyDb.client               // Direct client
+  ]
 
-  // Older structure: db.session.db
-  if (anyDb.session && anyDb.session.db) {
-    return anyDb.session.db
-  }
-
-  // Direct session access
-  if (anyDb.session) {
-    return anyDb.session
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate.exec === 'function' && typeof candidate.prepare === 'function') {
+      return candidate as Database.Database
+    }
   }
 
   throw new Error('Unable to extract raw better-sqlite3 instance from Drizzle database')

@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
-import { createDatabase, closeDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../src/db/client'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { LearningSearchImpl } from '../../src/services/learning-search'
 import { MockEmbeddingModel } from '../../src/mocks'
-import Database from 'better-sqlite3'
 
 describe('Learning Search Pipeline', () => {
   const testDbPath = join(__dirname, '../tmp/learning-search-integration-test.db')
 
-  let db: Database.Database
+  let drizzleDb: DrizzleDB
   let vectorStore: SqliteVectorStore
   let embedder: MockEmbeddingModel
   let search: LearningSearchImpl
@@ -21,22 +21,22 @@ describe('Learning Search Pipeline', () => {
       unlinkSync(testDbPath)
     }
 
-    // Create fresh database
-    db = createDatabase(testDbPath)
+    // Create fresh Drizzle database
+    drizzleDb = createDatabase(testDbPath)
 
     // Create mock embedder
     embedder = new MockEmbeddingModel()
 
     // Create vector store and initialize
-    vectorStore = new SqliteVectorStore(db)
+    vectorStore = new SqliteVectorStore(getRawDb(drizzleDb))
     vectorStore.initialize(embedder.dimensions)
 
-    // Create search engine
-    search = new LearningSearchImpl(embedder, vectorStore, db)
+    // Create search engine with DrizzleDB
+    search = new LearningSearchImpl(embedder, vectorStore, drizzleDb)
   })
 
   afterEach(() => {
-    closeDatabase(db)
+    getRawDb(drizzleDb).close()
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath)
     }
@@ -46,7 +46,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert test conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'TypeScript Tutorial', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -61,7 +61,7 @@ describe('Learning Search Pipeline', () => {
     const resonance = JSON.stringify({ intensity: 5, valence: 'positive' })
     const tags = JSON.stringify(['programming', 'typescript'])
 
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -103,7 +103,7 @@ describe('Learning Search Pipeline', () => {
     const recentDate = new Date('2024-06-01T00:00:00Z')
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${oldDate.toISOString()}', '${oldDate.toISOString()}', 'claude', 0)
     `).run()
@@ -117,7 +117,7 @@ describe('Learning Search Pipeline', () => {
 
     // Insert old learning
     const oldEmbedding = await embedder.embed('old content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -127,7 +127,7 @@ describe('Learning Search Pipeline', () => {
 
     // Insert recent learning
     const recentEmbedding = await embedder.embed('recent content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -155,7 +155,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -169,7 +169,7 @@ describe('Learning Search Pipeline', () => {
     // Insert TypeScript learning
     const tsTags = JSON.stringify(['typescript', 'programming'])
     const tsEmbedding = await embedder.embed('TypeScript content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -180,7 +180,7 @@ describe('Learning Search Pipeline', () => {
     // Insert React learning
     const reactTags = JSON.stringify(['react', 'frontend'])
     const reactEmbedding = await embedder.embed('React content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -206,7 +206,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -228,7 +228,7 @@ describe('Learning Search Pipeline', () => {
       const embedding = await embedder.embed(`content ${learning.id}`)
       const tags = JSON.stringify(learning.tags)
 
-      db.prepare(`
+      getRawDb(drizzleDb).prepare(`
         INSERT INTO learnings (
           learning_id, title, context, insight, why, implications, tags,
           abstraction, understanding, effort, resonance,
@@ -256,7 +256,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -280,7 +280,7 @@ describe('Learning Search Pipeline', () => {
     for (const learning of learnings) {
       const embedding = await embedder.embed(learning.text)
 
-      db.prepare(`
+      getRawDb(drizzleDb).prepare(`
         INSERT INTO learnings (
           learning_id, title, context, insight, why, implications, tags,
           abstraction, understanding, effort, resonance,
@@ -311,7 +311,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -328,7 +328,7 @@ describe('Learning Search Pipeline', () => {
       const text = `Learning ${i} about programming`
       const embedding = await embedder.embed(text)
 
-      db.prepare(`
+      getRawDb(drizzleDb).prepare(`
         INSERT INTO learnings (
           learning_id, title, context, insight, why, implications, tags,
           abstraction, understanding, effort, resonance,
@@ -345,7 +345,7 @@ describe('Learning Search Pipeline', () => {
 
   it('should combine date and tag filters', async () => {
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', datetime('now'), datetime('now'), 'claude', 0)
     `).run()
@@ -360,7 +360,7 @@ describe('Learning Search Pipeline', () => {
     const oldDate = new Date('2023-01-01')
     const oldEmbedding = await embedder.embed('old TypeScript')
     const tsTags = JSON.stringify(['typescript'])
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -371,7 +371,7 @@ describe('Learning Search Pipeline', () => {
     // Insert recent TypeScript learning
     const recentDate = new Date('2024-06-01')
     const recentEmbedding = await embedder.embed('recent TypeScript')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -382,7 +382,7 @@ describe('Learning Search Pipeline', () => {
     // Insert recent Python learning
     const pythonEmbedding = await embedder.embed('recent Python')
     const pyTags = JSON.stringify(['python'])
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -409,7 +409,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation with metadata
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, summary, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'TypeScript Tutorial', 'A detailed tutorial', '${now}', '${now}', 'claude', 5)
     `).run()
@@ -423,7 +423,7 @@ describe('Learning Search Pipeline', () => {
 
     // Insert learning
     const embedding = await embedder.embed('TypeScript content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -447,7 +447,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -461,7 +461,7 @@ describe('Learning Search Pipeline', () => {
 
     // Insert learning without tags
     const embedding = await embedder.embed('uncategorized content')
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
         learning_id, title, context, insight, why, implications, tags,
         abstraction, understanding, effort, resonance,
@@ -480,7 +480,7 @@ describe('Learning Search Pipeline', () => {
     const now = new Date().toISOString()
 
     // Insert conversation
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES ('conv-1', 'Test', '${now}', '${now}', 'claude', 0)
     `).run()
@@ -497,7 +497,7 @@ describe('Learning Search Pipeline', () => {
       const text = `Learning ${i} about programming and software development`
       const embedding = await embedder.embed(text)
 
-      db.prepare(`
+      getRawDb(drizzleDb).prepare(`
         INSERT INTO learnings (
           learning_id, title, context, insight, why, implications, tags,
           abstraction, understanding, effort, resonance,

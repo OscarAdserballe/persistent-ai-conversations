@@ -17,20 +17,13 @@
     "db:studio": "drizzle-kit studio",
     "db:drop": "drizzle-kit drop",
     "db:check": "drizzle-kit check",
-    "test": "vitest run",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
-    "test:e2e": "vitest run tests/e2e",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "NODE_OPTIONS='--max-old-space-size=2048' vitest run",
+    "test:unit": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/unit",
+    "test:integration": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/integration",
+    "test:e2e": "NODE_OPTIONS='--max-old-space-size=2048' vitest run tests/e2e",
+    "test:watch": "NODE_OPTIONS='--max-old-space-size=2048' vitest",
+    "test:coverage": "NODE_OPTIONS='--max-old-space-size=2048' vitest run --coverage"
   },
-  "keywords": [
-    "llm",
-    "conversation",
-    "archive",
-    "semantic-search",
-    "embeddings"
-  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
