@@ -1,4 +1,4 @@
-import { EmbeddingModel } from '../../src/core/types'
+import { EmbeddingModel } from '../core/types'
 
 /**
  * Mock embedding model for testing.

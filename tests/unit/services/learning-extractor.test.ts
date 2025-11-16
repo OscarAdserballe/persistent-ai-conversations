@@ -5,7 +5,7 @@ import {
   MockEmbeddingModel,
   MockVectorStore,
   createMockLearnings,
-} from "../../mocks";
+} from '../../../src/mocks';
 import Database from "better-sqlite3";
 import { ZodError } from "zod";
 

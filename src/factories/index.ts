@@ -18,12 +18,16 @@ import { GeminiFlash } from '../llm/gemini-flash'
 import { LearningExtractorImpl } from '../services/learning-extractor'
 import { LearningSearchImpl } from '../services/learning-search'
 import { createDatabase } from '../db/database'
+import { MockEmbeddingModel, MockLLMModel } from '../mocks'
 
 /**
  * Factory for creating embedding models based on config.
  */
 export function createEmbeddingModel(config: Config): EmbeddingModel {
   switch (config.embedding.provider) {
+    case 'mock':
+      return new MockEmbeddingModel()
+
     case 'gemini':
       return new GeminiEmbedding({
         apiKey: config.embedding.apiKey,
@@ -88,6 +92,9 @@ export function createImporter(platform: string): ConversationImporter {
  */
 export function createLLMModel(config: Config): LLMModel {
   switch (config.llm.provider) {
+    case 'mock':
+      return new MockLLMModel()
+
     case 'gemini':
       return new GeminiFlash({
         apiKey: config.llm.apiKey,

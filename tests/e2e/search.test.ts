@@ -4,7 +4,7 @@ import { join } from 'path'
 import { execSync } from 'child_process'
 import { createDefaultConfig } from '../../src/config'
 import { createDatabase } from '../../src/db/database'
-import { MockEmbeddingModel } from '../mocks/embedding-model'
+import { MockEmbeddingModel } from '../../src/mocks'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import Database from 'better-sqlite3'
 

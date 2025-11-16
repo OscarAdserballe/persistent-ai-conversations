@@ -389,7 +389,7 @@ export interface Config {
 }
 
 export interface EmbeddingConfig {
-  provider: 'gemini' | 'openai'
+  provider: 'gemini' | 'openai' | 'mock'
   apiKey: string
   model: string
   dimensions: number
@@ -398,7 +398,7 @@ export interface EmbeddingConfig {
 }
 
 export interface LLMConfig {
-  provider: 'gemini' | 'openai' | 'anthropic'
+  provider: 'gemini' | 'openai' | 'anthropic' | 'mock'
   apiKey: string
   model: string
   temperature?: number

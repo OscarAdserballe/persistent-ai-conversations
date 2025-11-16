@@ -1,4 +1,4 @@
-import { VectorStoreExtended, VectorSearchResult } from '../../src/core/types'
+import { VectorStoreExtended, VectorSearchResult } from '../core/types'
 
 /**
  * Mock vector store for testing.

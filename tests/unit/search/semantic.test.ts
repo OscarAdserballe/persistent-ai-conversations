@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { SemanticSearch } from '../../../src/search/semantic'
-import { MockEmbeddingModel, MockVectorStore } from '../../mocks'
+import { MockEmbeddingModel, MockVectorStore } from '../../../src/mocks'
 import { initializeSchema } from '../../../src/db/schema'
 import { unlinkSync } from 'fs'
 import { resolve } from 'path'

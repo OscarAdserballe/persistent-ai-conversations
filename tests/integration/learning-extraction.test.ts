@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createDatabase, closeDatabase } from '../../src/db/database'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { LearningExtractorImpl } from '../../src/services/learning-extractor'
-import { MockLLMModel, MockEmbeddingModel, createMockLearnings } from '../mocks'
+import { MockLLMModel, MockEmbeddingModel, createMockLearnings } from '../../src/mocks'
 import Database from 'better-sqlite3'
 import type { Conversation } from '../../src/core/types'
 

@@ -49,13 +49,16 @@ function validateConfig(config: Config): void {
     throw new Error("Missing embedding.provider");
   }
 
-  if (
-    !config.embedding.apiKey ||
-    config.embedding.apiKey === "YOUR_GEMINI_API_KEY_HERE"
-  ) {
-    throw new Error(
-      "Missing embedding.apiKey - please set GEMINI_API_KEY in .env file or update config.json"
-    );
+  // Skip API key validation for mock provider
+  if (config.embedding.provider !== 'mock') {
+    if (
+      !config.embedding.apiKey ||
+      config.embedding.apiKey === "YOUR_GEMINI_API_KEY_HERE"
+    ) {
+      throw new Error(
+        "Missing embedding.apiKey - please set GEMINI_API_KEY in .env file or update config.json"
+      );
+    }
   }
 
   if (!config.embedding.model) {
@@ -88,10 +91,13 @@ function validateConfig(config: Config): void {
       throw new Error("Missing llm.provider");
     }
 
-    if (!config.llm.apiKey || config.llm.apiKey === "YOUR_API_KEY_HERE") {
-      throw new Error(
-        "Missing llm.apiKey - please set GEMINI_API_KEY in .env file or update config.json"
-      );
+    // Skip API key validation for mock provider
+    if (config.llm.provider !== 'mock') {
+      if (!config.llm.apiKey || config.llm.apiKey === "YOUR_API_KEY_HERE") {
+        throw new Error(
+          "Missing llm.apiKey - please set GEMINI_API_KEY in .env file or update config.json"
+        );
+      }
     }
 
     if (!config.llm.model) {
@@ -106,20 +112,20 @@ function validateConfig(config: Config): void {
 export function createDefaultConfig(overrides?: Partial<Config>): Config {
   const defaults: Config = {
     embedding: {
-      provider: "gemini",
-      apiKey: "test-key",
-      model: "text-embedding-004",
+      provider: "mock",
+      apiKey: "",  // Not needed for mock provider
+      model: "mock-embedding",
       dimensions: 768,
       batchSize: 100,
-      rateLimitDelayMs: 100,
+      rateLimitDelayMs: 0,
     },
     llm: {
-      provider: "gemini",
-      apiKey: "test-key",
-      model: "gemini-2.5-flash-lite",
+      provider: "mock",
+      apiKey: "",  // Not needed for mock provider
+      model: "mock-llm",
       temperature: 0.7,
       maxTokens: 2000,
-      rateLimitDelayMs: 1000,
+      rateLimitDelayMs: 0,
     },
     db: {
       path: "./data/conversations.db",

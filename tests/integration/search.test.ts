@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createDatabase, closeDatabase } from '../../src/db/database'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { SemanticSearch } from '../../src/search/semantic'
-import { MockEmbeddingModel } from '../mocks/embedding-model'
+import { MockEmbeddingModel } from '../../src/mocks'
 import Database from 'better-sqlite3'
 
 describe('Search Pipeline Integration', () => {

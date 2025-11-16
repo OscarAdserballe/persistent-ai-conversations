@@ -9,7 +9,7 @@ import {
   MockLLMModel,
   MockEmbeddingModel,
   createMockLearnings,
-} from "../mocks";
+} from '../../src/mocks';
 import Database from "better-sqlite3";
 import type { Conversation } from "../../src/core/types";
 

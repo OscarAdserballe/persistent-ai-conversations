@@ -1,4 +1,4 @@
-import { LLMModel } from '../../src/core/types'
+import { LLMModel } from '../core/types'
 
 /**
  * Mock LLM model for testing.

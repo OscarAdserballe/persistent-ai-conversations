@@ -4,7 +4,7 @@ import { join } from 'path'
 import { createDatabase, closeDatabase } from '../../src/db/database'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import { LearningSearchImpl } from '../../src/services/learning-search'
-import { MockEmbeddingModel } from '../mocks'
+import { MockEmbeddingModel } from '../../src/mocks'
 import Database from 'better-sqlite3'
 
 describe('Learning Search Pipeline', () => {
