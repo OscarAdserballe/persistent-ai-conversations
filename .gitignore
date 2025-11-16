@@ -16,7 +16,6 @@ data/
 *.db-wal
 
 # Test files
-tests/tmp/
 coverage/
 
 # IDE
