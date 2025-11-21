@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import * as fs from "fs";
 import pLimit from "p-limit";
 import { loadConfig } from "../config";
-import { createDatabase } from "../db/database";
-import { createLearningExtractor } from "../factories";
+import { createLearningExtractor, createDatabase } from "../factories";
+import { getRawDb } from "../db/client";
+import {
+  conversations as conversationsTable,
+  messages as messagesTable,
+  learnings as learningsTable,
+} from "../db/schema";
+import { and, gte, lte, eq } from "drizzle-orm";
 import type {
   Conversation,
   Message,
@@ -67,16 +72,18 @@ program
           }...\n`
         );
 
-        // Fetch conversations in date range
+        // Fetch conversations in date range using Drizzle
         const conversations = db
-          .prepare(
-            `
-        SELECT * FROM conversations
-        WHERE created_at >= ? AND created_at <= ?
-        ORDER BY created_at DESC
-      `
+          .select()
+          .from(conversationsTable)
+          .where(
+            and(
+              gte(conversationsTable.createdAt, start),
+              lte(conversationsTable.createdAt, end)
+            )
           )
-          .all(start.toISOString(), end.toISOString()) as any[];
+          .orderBy(conversationsTable.createdAt)
+          .all();
 
         const total = conversations.length;
         console.log(`Processing ${total} conversations...\n`);
@@ -126,17 +133,14 @@ program
         // Convert to promises with concurrency control
         const extractionPromises = conversations.map((conv, i) =>
           limit(async () => {
-            // Check if already processed
-            const existing = db
-              .prepare(
-                `
-              SELECT COUNT(*) as count FROM learnings 
-              WHERE conversation_uuid = ?
-            `
-              )
-              .get(conv.uuid) as { count: number };
+            // Check if already processed using Drizzle
+            const existingLearnings = db
+              .select()
+              .from(learningsTable)
+              .where(eq(learningsTable.conversationUuid, conv.uuid))
+              .all();
 
-            if (existing.count > 0) {
+            if (existingLearnings.length > 0) {
               console.log(
                 `[${i + 1}/${total}] ⊘ Skipping "${
                   conv.name
@@ -146,22 +150,21 @@ program
             }
 
             try {
-              // Fetch messages
+              // Fetch messages using Drizzle
               const messagesRaw = db
-                .prepare(
-                  `
-                SELECT * FROM messages 
-                WHERE conversation_uuid = ? 
-                ORDER BY conversation_index ASC
-              `
-                )
-                .all(conv.uuid) as any[];
+                .select()
+                .from(messagesTable)
+                .where(eq(messagesTable.conversationUuid, conv.uuid))
+                .orderBy(messagesTable.conversationIndex)
+                .all();
 
               const messages: Message[] = messagesRaw.map((msg) => ({
-                ...msg,
-                createdAt: new Date(msg.created_at),
-                conversationUuid: msg.conversation_uuid,
-                conversationIndex: msg.conversation_index,
+                uuid: msg.uuid,
+                conversationUuid: msg.conversationUuid,
+                conversationIndex: msg.conversationIndex,
+                sender: msg.sender,
+                text: msg.text,
+                createdAt: msg.createdAt,
                 metadata: {},
               }));
 
@@ -170,8 +173,8 @@ program
                 title: conv.name,
                 platform: conv.platform,
                 messages,
-                createdAt: new Date(conv.created_at),
-                updatedAt: new Date(conv.updated_at),
+                createdAt: conv.createdAt,
+                updatedAt: conv.updatedAt,
                 metadata: {},
               };
 
@@ -212,7 +215,7 @@ program
           }
         }
 
-        db.close();
+        getRawDb(db).close();
         process.exit(0);
       } catch (error) {
         console.error(

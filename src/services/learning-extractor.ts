@@ -1,18 +1,8 @@
-import Database from "better-sqlite3";
 import {
   LLMModel,
   EmbeddingModel,
-  VectorStoreExtended,
   LearningExtractor,
   Learning,
-  Abstraction,
-  Understanding,
-  Effort,
-  Resonance,
-  LearningType,
-  ProcessingTime,
-  CognitiveLoad,
-  Valence,
 } from "../core/types";
 import type { Conversation } from "../core/types";
 import {
@@ -20,6 +10,8 @@ import {
   zodToGeminiSchema,
   type LearningJSONType,
 } from "../schemas/learning";
+import { DrizzleDB } from "../db/client";
+import { learnings as learningsTable, type LearningInsert } from "../db/schema";
 
 /**
  * Service for extracting learnings from conversations.
@@ -29,7 +21,7 @@ export class LearningExtractorImpl implements LearningExtractor {
   constructor(
     private llm: LLMModel,
     private embedder: EmbeddingModel,
-    private db: Database.Database
+    private db: DrizzleDB
   ) {}
 
   async extractFromConversation(
@@ -68,96 +60,72 @@ export class LearningExtractorImpl implements LearningExtractor {
     );
     const embeddings = await this.embedder.embedBatch(embeddingTexts);
 
-    // 5. Store all learnings
-    // Try to use transaction if available, otherwise proceed without it
-    const hasTransaction = typeof this.db.transaction === "function";
-    const db = this.db; // Capture for closure
+    // 5. Store all learnings using Drizzle (type-safe, no manual JSON.stringify!)
+    const results: Learning[] = [];
+    const now = new Date();
 
-    const insertFunc = (
-      learningsToInsert: LearningJSONType[],
-      embeddingsToInsert: Float32Array[]
-    ): Learning[] => {
-      const localResults: Learning[] = [];
+    for (let i = 0; i < learnings.length; i++) {
+      const learning = learnings[i];
+      const embedding = embeddings[i];
+      const learningId = this.generateUUID();
 
-      for (let i = 0; i < learningsToInsert.length; i++) {
-        const learning = learningsToInsert[i];
-        const embedding = embeddingsToInsert[i];
+      // Drizzle insert - fully type-safe, handles JSON automatically
+      const insertData: LearningInsert = {
+        learningId,
+        title: learning.title,
+        context: learning.context,
+        insight: learning.insight,
+        why: learning.why,
+        implications: learning.implications,
+        tags: learning.tags,
+        abstraction: learning.abstraction,
+        understanding: {
+          confidence: learning.understanding.confidence,
+          can_teach_it: learning.understanding.can_teach_it,
+          known_gaps: learning.understanding.known_gaps,
+        },
+        effort: {
+          processing_time: learning.effort.processing_time,
+          cognitive_load: learning.effort.cognitive_load,
+        },
+        resonance: learning.resonance,
+        learningType: learning.learning_type,
+        sourceCredit: learning.source_credit,
+        conversationUuid: conversation.uuid,
+        embedding: this.serializeEmbedding(embedding),
+        createdAt: now,
+      };
 
-        // Generate UUID for learning
-        const learningId = this.generateUUID();
+      await this.db.insert(learningsTable).values(insertData);
 
-        // Insert learning with UUID and all new fields
-        db.prepare(
-          `
-          INSERT INTO learnings (
-            learning_id, title, context, insight, why, implications, tags,
-            abstraction, understanding, effort, resonance,
-            learning_type, source_credit, conversation_uuid,
-            embedding, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        `
-        ).run(
-          learningId,
-          learning.title,
-          learning.context,
-          learning.insight,
-          learning.why,
-          learning.implications,
-          JSON.stringify(learning.tags),
-          JSON.stringify(learning.abstraction),
-          JSON.stringify({
-            confidence: learning.understanding.confidence,
-            canTeachIt: learning.understanding.can_teach_it,
-            knownGaps: learning.understanding.known_gaps,
-          }),
-          JSON.stringify({
-            processingTime: learning.effort.processing_time,
-            cognitiveLoad: learning.effort.cognitive_load,
-          }),
-          JSON.stringify(learning.resonance),
-          learning.learning_type || null,
-          learning.source_credit || null,
-          conversation.uuid,
-          this.serializeEmbedding(embedding)
-        );
-
-        localResults.push({
-          learningId,
-          title: learning.title,
-          context: learning.context,
-          insight: learning.insight,
-          why: learning.why,
-          implications: learning.implications,
-          tags: learning.tags,
-          abstraction: learning.abstraction,
-          understanding: {
-            confidence: learning.understanding.confidence,
-            canTeachIt: learning.understanding.can_teach_it,
-            knownGaps: learning.understanding.known_gaps,
-          },
-          effort: {
-            processingTime: learning.effort.processing_time,
-            cognitiveLoad: learning.effort.cognitive_load,
-          },
-          resonance: learning.resonance,
-          learningType: learning.learning_type,
-          sourceCredit: learning.source_credit,
-          conversationUuid: conversation.uuid,
-          createdAt: new Date(),
-          embedding,
-        });
-      }
-
-      return localResults;
-    };
-
-    // Execute with or without transaction
-    if (hasTransaction) {
-      const transactionFunc = this.db.transaction(insertFunc);
-      return transactionFunc(learnings, embeddings);
-    } else {
-      return insertFunc(learnings, embeddings);
+      results.push({
+        learningId,
+        title: learning.title,
+        context: learning.context,
+        insight: learning.insight,
+        why: learning.why,
+        implications: learning.implications,
+        tags: learning.tags,
+        abstraction: learning.abstraction,
+        understanding: {
+          confidence: learning.understanding.confidence,
+          canTeachIt: learning.understanding.can_teach_it,
+          knownGaps: learning.understanding.known_gaps,
+        },
+        effort: {
+          processingTime: learning.effort.processing_time,
+          cognitiveLoad: learning.effort.cognitive_load,
+        },
+        resonance: learning.resonance,
+        learningType: learning.learning_type,
+        sourceCredit: learning.source_credit,
+        conversationUuid: conversation.uuid,
+        createdAt: now,
+        embedding,
+      });
     }
+
+    return results;
   }
 
   private buildConversationContext(conversation: Conversation): string {

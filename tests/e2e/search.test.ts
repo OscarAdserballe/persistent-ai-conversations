@@ -3,7 +3,8 @@ import { unlinkSync, existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { createDefaultConfig } from '../../src/config'
-import { createDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../src/db/client'
 import { MockEmbeddingModel } from '../../src/mocks'
 import { SqliteVectorStore } from '../../src/db/vector-store'
 import Database from 'better-sqlite3'
@@ -12,6 +13,7 @@ describe('Search Command E2E', () => {
   const testDbPath = join(__dirname, '../tmp/e2e-search-test.db')
   const testConfigPath = join(__dirname, '../tmp/e2e-search-config.json')
 
+  let drizzleDb: DrizzleDB
   let db: Database.Database
 
   beforeEach(async () => {
@@ -38,7 +40,8 @@ describe('Search Command E2E', () => {
     writeFileSync(testConfigPath, JSON.stringify(testConfig, null, 2))
 
     // Create and populate test database
-    db = createDatabase(testDbPath)
+    drizzleDb = createDatabase(testDbPath)
+    db = getRawDb(drizzleDb)
 
     const embedder = new MockEmbeddingModel()
     const vectorStore = new SqliteVectorStore(db)
@@ -226,7 +229,8 @@ describe('Search Command E2E', () => {
 
   it('should truncate long messages', async () => {
     // Create a message with very long text
-    const longDb = createDatabase(testDbPath)
+    const longDrizzleDb = createDatabase(testDbPath)
+    const longDb = getRawDb(longDrizzleDb)
     const embedder = new MockEmbeddingModel()
 
     const longText = 'A'.repeat(500) // 500 character message

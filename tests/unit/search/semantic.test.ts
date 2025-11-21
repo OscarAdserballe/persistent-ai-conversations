@@ -1,22 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import Database from 'better-sqlite3'
 import { SemanticSearch } from '../../../src/search/semantic'
 import { MockEmbeddingModel, MockVectorStore } from '../../../src/mocks'
-import { initializeSchema } from '../../../src/db/schema'
+import { createDatabase } from '../../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../../src/db/client'
 import { unlinkSync } from 'fs'
 import { resolve } from 'path'
 
 describe('SemanticSearch', () => {
-  let db: Database.Database
+  let drizzleDb: DrizzleDB
   let embedder: MockEmbeddingModel
   let vectorStore: MockVectorStore
   let search: SemanticSearch
   const dbPath = resolve(__dirname, '../../tmp/semantic-search-test.db')
 
   beforeEach(() => {
-    // Create fresh database
-    db = new Database(dbPath)
-    initializeSchema(db)
+    // Create fresh database using factory (handles migrations)
+    drizzleDb = createDatabase(dbPath)
+    const db = getRawDb(drizzleDb)
 
     // Insert test data
     db.prepare(`
@@ -45,12 +45,12 @@ describe('SemanticSearch', () => {
       vectorStore.insert(`msg-${i}`, embedding)
     }
 
-    // Create search engine
-    search = new SemanticSearch(embedder, vectorStore, db)
+    // Create search engine with DrizzleDB
+    search = new SemanticSearch(embedder, vectorStore, drizzleDb)
   })
 
   afterEach(() => {
-    db.close()
+    getRawDb(drizzleDb).close()
     try {
       unlinkSync(dbPath)
     } catch (e) {
@@ -206,6 +206,8 @@ describe('SemanticSearch', () => {
     })
 
     it('should filter by conversation UUIDs', async () => {
+      const db = getRawDb(drizzleDb)
+
       // Add another conversation
       db.prepare(`
         INSERT INTO conversations (uuid, name, created_at, updated_at, platform)

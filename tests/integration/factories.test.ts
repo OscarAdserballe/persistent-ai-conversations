@@ -5,12 +5,13 @@ import {
   createEmbeddingModel,
   createVectorStore,
   createSearchEngine,
-  createImporter
+  createImporter,
+  createDatabase
 } from '../../src/factories'
+import { getRawDb } from '../../src/db/client'
 import { createDefaultConfig } from '../../src/config'
-import { createDatabase } from '../../src/db/database'
 import type { Config } from '../../src/core/types'
-import Database from 'better-sqlite3'
+import type { DrizzleDB } from '../../src/db/client'
 
 describe('Factory Wiring Integration', () => {
   const testDbPath = join(__dirname, '../tmp/factory-integration-test.db')
@@ -63,8 +64,8 @@ describe('Factory Wiring Integration', () => {
   })
 
   it('should create vector store from database', () => {
-    const db = new Database(testDbPath)
-    const vectorStore = createVectorStore(db)
+    const drizzleDb = createDatabase(testDbPath)
+    const vectorStore = createVectorStore(drizzleDb)
 
     expect(vectorStore).toBeDefined()
     expect(typeof vectorStore.initialize).toBe('function')
@@ -74,13 +75,13 @@ describe('Factory Wiring Integration', () => {
     // Should not be initialized yet
     expect(vectorStore.getDimensions()).toBeNull()
 
-    db.close()
+    getRawDb(drizzleDb).close()
   })
 
   it('should propagate dimensions from embedder to vector store', () => {
     const embedder = createEmbeddingModel(testConfig)
-    const db = new Database(testDbPath)
-    const vectorStore = createVectorStore(db)
+    const drizzleDb = createDatabase(testDbPath)
+    const vectorStore = createVectorStore(drizzleDb)
 
     // Initialize with embedder dimensions
     vectorStore.initialize(embedder.dimensions)
@@ -89,7 +90,7 @@ describe('Factory Wiring Integration', () => {
     expect(vectorStore.getDimensions()).toBe(embedder.dimensions)
     expect(vectorStore.getDimensions()).toBe(768)
 
-    db.close()
+    getRawDb(drizzleDb).close()
   })
 
   it('should create fully wired search engine', () => {
@@ -132,8 +133,8 @@ describe('Factory Wiring Integration', () => {
     // The unit tests and other integration tests cover the wiring adequately
 
     // Create database and vector store
-    const db = createDatabase(testDbPath)
-    const vectorStore = createVectorStore(db)
+    const drizzleDb = createDatabase(testDbPath)
+    const vectorStore = createVectorStore(drizzleDb)
 
     // Initialize with standard dimensions
     vectorStore.initialize(768)
@@ -143,13 +144,13 @@ describe('Factory Wiring Integration', () => {
 
     // Insert a test conversation first (for foreign key)
     const now = new Date().toISOString()
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run('test-conv', 'Test', now, now, 'claude', 1)
 
     // Insert a test message
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO messages (uuid, conversation_uuid, conversation_index, sender, text, created_at, chunk_count)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run('test-msg-1', 'test-conv', 0, 'human', 'test', now, 1)
@@ -157,7 +158,7 @@ describe('Factory Wiring Integration', () => {
     // Insert chunk with embedding (bypassing deprecated insert method)
     const manualEmbedding = new Float32Array(768).fill(0.5)
     const messageId = 'test-msg-1'
-    db.prepare(`
+    getRawDb(drizzleDb).prepare(`
       INSERT INTO message_chunks (message_uuid, chunk_index, text, char_count, embedding)
       VALUES (?, ?, ?, ?, ?)
     `).run(messageId, 0, 'test', 4, Buffer.from(manualEmbedding.buffer))
@@ -169,13 +170,13 @@ describe('Factory Wiring Integration', () => {
     expect(results.length).toBeGreaterThan(0)
     expect(results[0].id).toBe(messageId)
 
-    db.close()
+    getRawDb(drizzleDb).close()
   })
 
   it('should validate dimension consistency', () => {
     const embedder = createEmbeddingModel(testConfig)
-    const db = new Database(testDbPath)
-    const vectorStore = createVectorStore(db)
+    const drizzleDb = createDatabase(testDbPath)
+    const vectorStore = createVectorStore(drizzleDb)
 
     // Initialize with correct dimensions
     vectorStore.initialize(embedder.dimensions)
@@ -186,7 +187,7 @@ describe('Factory Wiring Integration', () => {
     const currentDimensions = vectorStore.getDimensions()
     expect(currentDimensions).toBe(embedder.dimensions)
 
-    db.close()
+    getRawDb(drizzleDb).close()
   })
 
   it('should create components with custom batch size', () => {
@@ -234,8 +235,10 @@ describe('Factory Wiring Integration', () => {
     mkdirSync(dirname(nestedDbPath), { recursive: true })
 
     try {
-      const vectorStore = createVectorStore(nestedConfig)
+      const drizzleDb = createDatabase(nestedDbPath)
+      const vectorStore = createVectorStore(drizzleDb)
       expect(vectorStore).toBeDefined()
+      getRawDb(drizzleDb).close()
 
       // Clean up
       if (existsSync(nestedDbPath)) {
@@ -264,15 +267,15 @@ describe('Factory Wiring Integration', () => {
     const db1Path = join(__dirname, '../tmp/factory-test-1.db')
     const db2Path = join(__dirname, '../tmp/factory-test-2.db')
 
-    let db1: Database.Database | null = null
-    let db2: Database.Database | null = null
+    let drizzleDb1: DrizzleDB | null = null
+    let drizzleDb2: DrizzleDB | null = null
 
     try {
-      db1 = createDatabase(db1Path)
-      db2 = createDatabase(db2Path)
+      drizzleDb1 = createDatabase(db1Path)
+      drizzleDb2 = createDatabase(db2Path)
 
-      const store1 = createVectorStore(db1)
-      const store2 = createVectorStore(db2)
+      const store1 = createVectorStore(drizzleDb1)
+      const store2 = createVectorStore(drizzleDb2)
 
       expect(store1).toBeDefined()
       expect(store2).toBeDefined()
@@ -284,8 +287,8 @@ describe('Factory Wiring Integration', () => {
       expect(store1.getDimensions()).toBe(768)
       expect(store2.getDimensions()).toBe(768)
 
-      db1.close()
-      db2.close()
+      getRawDb(drizzleDb1).close()
+      getRawDb(drizzleDb2).close()
 
     } finally {
       // Clean up

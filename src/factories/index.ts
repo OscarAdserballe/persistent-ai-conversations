@@ -1,5 +1,5 @@
-import Database from 'better-sqlite3'
-import { Config } from '../core/types'
+import Database from "better-sqlite3";
+import { Config } from "../core/types";
 import {
   EmbeddingModel,
   VectorStore,
@@ -8,65 +8,154 @@ import {
   ConversationImporter,
   LLMModel,
   LearningExtractor,
-  LearningSearch
-} from '../core/types'
-import { GeminiEmbedding } from '../embeddings/gemini'
-import { SqliteVectorStore } from '../db/vector-store'
-import { SemanticSearch } from '../search/semantic'
-import { ClaudeImporter } from '../importers/claude'
-import { GeminiFlash } from '../llm/gemini-flash'
-import { LearningExtractorImpl } from '../services/learning-extractor'
-import { LearningSearchImpl } from '../services/learning-search'
-import { createDatabase } from '../db/database'
-import { MockEmbeddingModel, MockLLMModel } from '../mocks'
+  LearningSearch,
+} from "../core/types";
+import { GeminiEmbedding } from "../embeddings/gemini";
+import { SqliteVectorStore } from "../db/vector-store";
+import { SemanticSearch } from "../search/semantic";
+import { ClaudeImporter } from "../importers/claude";
+import { GeminiFlash } from "../llm/gemini-flash";
+import { LearningExtractorImpl } from "../services/learning-extractor";
+import { LearningSearchImpl } from "../services/learning-search";
+import { createDrizzleDb, getRawDb, DrizzleDB } from "../db/client";
+import { MockEmbeddingModel, MockLLMModel } from "../mocks";
+import { mkdirSync } from "fs";
+import { dirname } from "path";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 /**
  * Factory for creating embedding models based on config.
  */
 export function createEmbeddingModel(config: Config): EmbeddingModel {
   switch (config.embedding.provider) {
-    case 'mock':
-      return new MockEmbeddingModel()
+    case "mock":
+      return new MockEmbeddingModel();
 
-    case 'gemini':
+    case "gemini":
       return new GeminiEmbedding({
         apiKey: config.embedding.apiKey,
         model: config.embedding.model,
         batchSize: config.embedding.batchSize,
-        rateLimitDelayMs: config.embedding.rateLimitDelayMs
-      })
+        rateLimitDelayMs: config.embedding.rateLimitDelayMs,
+      });
 
     // Future:
     // case 'openai':
     //   return new OpenAIEmbedding(config.embedding)
 
     default:
-      throw new Error(`Unknown embedding provider: ${config.embedding.provider}`)
+      throw new Error(
+        `Unknown embedding provider: ${config.embedding.provider}`
+      );
   }
 }
 
 /**
- * Factory for creating vector store with database connection.
+ * Factory for creating database connection.
+ * Now returns Drizzle-wrapped database for type safety.
+ * @param path - Path to SQLite database file
+ * @returns DrizzleDB instance
  */
-export function createVectorStore(db: Database.Database): VectorStoreExtended {
-  return new SqliteVectorStore(db)
+export function createDatabase(path: string): DrizzleDB {
+  // Ensure parent directory exists (especially important for CI/test environments)
+  if (path !== ":memory:") {
+    const dir = dirname(path);
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const db = createDrizzleDb(path);
+
+  // Run Drizzle migrations to create base tables
+  migrate(db, { migrationsFolder: "./migrations" });
+
+  // Create FTS5 tables and triggers (Drizzle doesn't support FTS5 yet)
+  const rawDb = getRawDb(db);
+
+  // Initialize FTS5 tables and triggers
+  rawDb.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts USING fts5(
+      uuid UNINDEXED,
+      name,
+      summary,
+      content=conversations,
+      content_rowid=rowid
+    );
+  `);
+
+  rawDb.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      uuid UNINDEXED,
+      text,
+      content=messages,
+      content_rowid=rowid
+    );
+  `);
+
+  // Create FTS triggers
+  rawDb.exec(`
+    CREATE TRIGGER IF NOT EXISTS conversations_fts_insert AFTER INSERT ON conversations BEGIN
+      INSERT INTO conversations_fts(uuid, name, summary) VALUES (new.uuid, new.name, new.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS conversations_fts_delete AFTER DELETE ON conversations BEGIN
+      DELETE FROM conversations_fts WHERE uuid = old.uuid;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS conversations_fts_update AFTER UPDATE ON conversations BEGIN
+      DELETE FROM conversations_fts WHERE uuid = old.uuid;
+      INSERT INTO conversations_fts(uuid, name, summary) VALUES (new.uuid, new.name, new.summary);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(uuid, text) VALUES (new.uuid, new.text);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS messages_fts_delete AFTER DELETE ON messages BEGIN
+      DELETE FROM messages_fts WHERE uuid = old.uuid;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
+      DELETE FROM messages_fts WHERE uuid = old.uuid;
+      INSERT INTO messages_fts(uuid, text) VALUES (new.uuid, new.text);
+    END;
+  `);
+
+  return db;
+}
+
+/**
+ * Factory for creating vector store with database connection.
+ * Accepts DrizzleDB or raw Database for backward compatibility.
+ * @param db - DrizzleDB or raw better-sqlite3 Database
+ */
+export function createVectorStore(
+  db: DrizzleDB | Database.Database
+): VectorStoreExtended {
+  // Check if it's already a raw Database instance
+  const rawDb = (db as Database.Database).prepare
+    ? (db as Database.Database)
+    : getRawDb(db as DrizzleDB);
+  return new SqliteVectorStore(rawDb);
 }
 
 /**
  * Factory for creating fully-wired search engine.
  * Coordinates embedding model and vector store dimensions.
  */
-export function createSearchEngine(config: Config, db?: Database.Database): SearchEngine {
-  const database = db || createDatabase(config.db.path)
-  const embedder = createEmbeddingModel(config)
-  const vectorStore = createVectorStore(database)
+export function createSearchEngine(
+  config: Config,
+  db?: DrizzleDB
+): SearchEngine {
+  const database = db || createDatabase(config.db.path);
+  const embedder = createEmbeddingModel(config);
+  const vectorStore = createVectorStore(database);
 
   return new SemanticSearch(
     embedder,
     vectorStore,
     database,
     config.search.contextWindow
-  )
+  );
 }
 
 /**
@@ -74,15 +163,15 @@ export function createSearchEngine(config: Config, db?: Database.Database): Sear
  */
 export function createImporter(platform: string): ConversationImporter {
   switch (platform) {
-    case 'claude':
-      return new ClaudeImporter()
+    case "claude":
+      return new ClaudeImporter();
 
     // Future:
     // case 'openai':
     //   return new OpenAIImporter()
 
     default:
-      throw new Error(`Unknown platform: ${platform}`)
+      throw new Error(`Unknown platform: ${platform}`);
   }
 }
 
@@ -92,17 +181,17 @@ export function createImporter(platform: string): ConversationImporter {
  */
 export function createLLMModel(config: Config): LLMModel {
   switch (config.llm.provider) {
-    case 'mock':
-      return new MockLLMModel()
+    case "mock":
+      return new MockLLMModel();
 
-    case 'gemini':
+    case "gemini":
       return new GeminiFlash({
         apiKey: config.llm.apiKey,
         model: config.llm.model,
         temperature: config.llm.temperature,
         maxTokens: config.llm.maxTokens,
-        rateLimitDelayMs: config.llm.rateLimitDelayMs
-      })
+        rateLimitDelayMs: config.llm.rateLimitDelayMs,
+      });
 
     // Future:
     // case 'openai':
@@ -111,7 +200,7 @@ export function createLLMModel(config: Config): LLMModel {
     //   return new ClaudeHaiku(config.llm)
 
     default:
-      throw new Error(`Unknown LLM provider: ${config.llm.provider}`)
+      throw new Error(`Unknown LLM provider: ${config.llm.provider}`);
   }
 }
 
@@ -119,29 +208,37 @@ export function createLLMModel(config: Config): LLMModel {
  * Factory for creating fully-wired learning extractor.
  * Coordinates LLM, embedder, vector store, and database.
  */
-export function createLearningExtractor(config: Config, db?: Database.Database): LearningExtractor {
-  const database = db || createDatabase(config.db.path)
-  const llm = createLLMModel(config)
-  const embedder = createEmbeddingModel(config)
-  const vectorStore = createVectorStore(database)
+export function createLearningExtractor(
+  config: Config,
+  db?: DrizzleDB
+): LearningExtractor {
+  const database = db || createDatabase(config.db.path);
+  const llm = createLLMModel(config);
+  const embedder = createEmbeddingModel(config);
+  const vectorStore = createVectorStore(database);
 
   // Initialize vector store with embedding dimensions
-  vectorStore.initialize(embedder.dimensions)
+  vectorStore.initialize(embedder.dimensions);
 
-  return new LearningExtractorImpl(llm, embedder, database)
+  // Pass DrizzleDB directly - service uses type-safe queries now!
+  return new LearningExtractorImpl(llm, embedder, database);
 }
 
 /**
  * Factory for creating learning search engine.
  * Reuses existing VectorStore infrastructure.
  */
-export function createLearningSearch(config: Config, db?: Database.Database): LearningSearch {
-  const database = db || createDatabase(config.db.path)
-  const embedder = createEmbeddingModel(config)
-  const vectorStore = createVectorStore(database)
+export function createLearningSearch(
+  config: Config,
+  db?: DrizzleDB
+): LearningSearch {
+  const database = db || createDatabase(config.db.path);
+  const embedder = createEmbeddingModel(config);
+  const vectorStore = createVectorStore(database);
 
   // Initialize vector store with embedding dimensions
-  vectorStore.initialize(embedder.dimensions)
+  vectorStore.initialize(embedder.dimensions);
 
-  return new LearningSearchImpl(embedder, vectorStore, database)
+  // Pass DrizzleDB directly - service uses type-safe queries now!
+  return new LearningSearchImpl(embedder, vectorStore, database);
 }

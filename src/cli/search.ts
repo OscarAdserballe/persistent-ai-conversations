@@ -2,8 +2,8 @@
 
 import { Command } from 'commander'
 import { loadConfig } from '../config'
-import { createDatabase } from '../db/database'
-import { createSearchEngine } from '../factories'
+import { createSearchEngine, createDatabase } from '../factories'
+import { getRawDb } from '../db/client'
 
 const program = new Command()
 
@@ -27,11 +27,11 @@ program
       // Load configuration
       const config = loadConfig(options.config)
 
-      // Create database connection
-      const db = createDatabase(config.db.path)
+      // Create database connection (returns DrizzleDB)
+      const drizzleDb = createDatabase(config.db.path)
 
       // Create search engine
-      const searchEngine = createSearchEngine(config, db)
+      const searchEngine = createSearchEngine(config, drizzleDb)
 
       // Build search options
       const searchOptions: any = {
@@ -59,7 +59,7 @@ program
 
       if (results.length === 0) {
         console.log('No results found.')
-        db.close()
+        getRawDb(drizzleDb).close()
         process.exit(0)
       }
 
@@ -97,7 +97,7 @@ program
         console.log()
       }
 
-      db.close()
+      getRawDb(drizzleDb).close()
       process.exit(0)
     } catch (error) {
       console.error('\n❌ Error during search:')

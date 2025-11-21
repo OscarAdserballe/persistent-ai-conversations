@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
-import { createDatabase, closeDatabase } from '../../src/db/database'
+import { createDatabase } from '../../src/factories'
+import { getRawDb, type DrizzleDB } from '../../src/db/client'
 import { ClaudeImporter } from '../../src/importers/claude'
 import Database from 'better-sqlite3'
 
@@ -10,6 +11,7 @@ describe('Importer Integration', () => {
   const minimalFixturePath = join(__dirname, '../fixtures/conversations/minimal.json')
   const edgeCasesFixturePath = join(__dirname, '../fixtures/conversations/edge-cases.json')
 
+  let drizzleDb: DrizzleDB
   let db: Database.Database
 
   beforeEach(() => {
@@ -17,11 +19,12 @@ describe('Importer Integration', () => {
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath)
     }
-    db = createDatabase(testDbPath)
+    drizzleDb = createDatabase(testDbPath)
+    db = getRawDb(drizzleDb)
   })
 
   afterEach(() => {
-    closeDatabase(db)
+    db.close()
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath)
     }

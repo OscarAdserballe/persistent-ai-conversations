@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { unlinkSync, existsSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
-import { createDatabase, closeDatabase } from "../../src/db/database";
+import { createDatabase } from "../../src/factories";
+import { getRawDb, type DrizzleDB } from "../../src/db/client";
 import { SqliteVectorStore } from "../../src/db/vector-store";
 import { LearningExtractorImpl } from "../../src/services/learning-extractor";
 import { LearningSearchImpl } from "../../src/services/learning-search";
@@ -10,14 +11,13 @@ import {
   MockEmbeddingModel,
   createMockLearnings,
 } from '../../src/mocks';
-import Database from "better-sqlite3";
 import type { Conversation } from "../../src/core/types";
 
 describe("Learning Workflow E2E", () => {
   const testDbPath = join(__dirname, "../tmp/learning-workflow-e2e-test.db");
   const diaryPath = join(__dirname, "../tmp/test-diary.md");
 
-  let db: Database.Database;
+  let drizzleDb: DrizzleDB;
   let vectorStore: SqliteVectorStore;
   let llm: MockLLMModel;
   let embedder: MockEmbeddingModel;
@@ -34,23 +34,23 @@ describe("Learning Workflow E2E", () => {
     }
 
     // Create fresh database
-    db = createDatabase(testDbPath);
+    drizzleDb = createDatabase(testDbPath);
 
     // Create mocks
     llm = new MockLLMModel();
     embedder = new MockEmbeddingModel();
 
     // Create vector store
-    vectorStore = new SqliteVectorStore(db);
+    vectorStore = new SqliteVectorStore(getRawDb(drizzleDb));
     vectorStore.initialize(embedder.dimensions);
 
     // Create extractor and search
-    extractor = new LearningExtractorImpl(llm, embedder, db);
-    search = new LearningSearchImpl(embedder, vectorStore, db);
+    extractor = new LearningExtractorImpl(llm, embedder, drizzleDb);
+    search = new LearningSearchImpl(embedder, vectorStore, drizzleDb);
   });
 
   afterEach(() => {
-    closeDatabase(db);
+    getRawDb(drizzleDb).close();
     if (existsSync(testDbPath)) {
       unlinkSync(testDbPath);
     }
@@ -100,7 +100,7 @@ describe("Learning Workflow E2E", () => {
       "TypeScript"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -147,7 +147,7 @@ describe("Learning Workflow E2E", () => {
       "nothing important"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -169,7 +169,7 @@ describe("Learning Workflow E2E", () => {
     expect(learnings).toEqual([]);
 
     // Verify nothing in DB
-    const storedLearnings = db.prepare("SELECT * FROM learnings").all();
+    const storedLearnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
     expect(storedLearnings).toHaveLength(0);
   });
 
@@ -181,7 +181,7 @@ describe("Learning Workflow E2E", () => {
       "TypeScript"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -208,7 +208,7 @@ describe("Learning Workflow E2E", () => {
     await extractor.extractFromConversation(conv1);
 
     // Verify first learning was created
-    const learningsAfterFirst = db.prepare("SELECT * FROM learnings").all();
+    const learningsAfterFirst = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
     expect(learningsAfterFirst).toHaveLength(1);
 
     // Second extraction creates another learning with same tags
@@ -218,7 +218,7 @@ describe("Learning Workflow E2E", () => {
       "advanced TypeScript"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -245,7 +245,7 @@ describe("Learning Workflow E2E", () => {
     await extractor.extractFromConversation(conv2);
 
     // Verify 2 learnings created (tags are stored as JSON in each learning)
-    const learnings = db.prepare("SELECT * FROM learnings").all();
+    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
     expect(learnings).toHaveLength(2);
   });
 
@@ -257,7 +257,7 @@ describe("Learning Workflow E2E", () => {
     ];
 
     for (const conv of conversations) {
-      db.prepare(
+      getRawDb(drizzleDb).prepare(
         `
         INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -319,7 +319,7 @@ describe("Learning Workflow E2E", () => {
       "TypeScript"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, summary, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -358,7 +358,7 @@ describe("Learning Workflow E2E", () => {
     expect(source?.title).toBe("Original Discussion");
 
     // Verify we can query the original conversation
-    const originalConv = db
+    const originalConv = getRawDb(drizzleDb)
       .prepare("SELECT * FROM conversations WHERE uuid = ?")
       .get("conv-source");
 
@@ -378,7 +378,7 @@ describe("Learning Workflow E2E", () => {
       );
       conversations.push(conv);
 
-      db.prepare(
+      getRawDb(drizzleDb).prepare(
         `
         INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -415,14 +415,14 @@ describe("Learning Workflow E2E", () => {
     const duration = endTime - startTime;
 
     // Verify all learnings were created
-    const learnings = db.prepare("SELECT * FROM learnings").all();
+    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
     expect(learnings.length).toBe(50);
 
     // Performance check: should complete in reasonable time (< 5 seconds for 50 extractions with mocks)
     expect(duration).toBeLessThan(5000);
 
     // Verify data consistency - all learnings have conversation_uuid
-    const learningsWithSource = db
+    const learningsWithSource = getRawDb(drizzleDb)
       .prepare(
         "SELECT COUNT(*) as count FROM learnings WHERE conversation_uuid IS NOT NULL"
       )
@@ -437,7 +437,7 @@ describe("Learning Workflow E2E", () => {
       "full stack"
     );
 
-    db.prepare(
+    getRawDb(drizzleDb).prepare(
       `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -474,7 +474,7 @@ describe("Learning Workflow E2E", () => {
     await extractor.extractFromConversation(conv);
 
     // Verify all 3 learnings were created
-    const learnings = db.prepare("SELECT * FROM learnings").all() as any[];
+    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all() as any[];
     expect(learnings).toHaveLength(3);
 
     // Verify tags are stored correctly as JSON

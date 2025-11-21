@@ -1,5 +1,7 @@
-import Database from 'better-sqlite3'
 import { SearchEngine, SearchOptions, SearchResult, EmbeddingModel, VectorStore, Message } from '../core/types'
+import { DrizzleDB } from '../db/client'
+import { messages, conversations } from '../db/schema'
+import { eq, and, gte, lte } from 'drizzle-orm'
 
 /**
  * Semantic search engine that coordinates embedding and vector search.
@@ -9,7 +11,7 @@ export class SemanticSearch implements SearchEngine {
   constructor(
     private embedder: EmbeddingModel,
     private vectorStore: VectorStore,
-    private db: Database.Database,
+    private db: DrizzleDB,
     private contextWindow: { before: number; after: number } = { before: 2, after: 1 }
   ) {
     // Initialize vector store with embedding dimensions
@@ -74,8 +76,8 @@ export class SemanticSearch implements SearchEngine {
         conversation: {
           uuid: conversation.uuid,
           title: conversation.name,
-          summary: conversation.summary,
-          createdAt: new Date(conversation.created_at),
+          summary: conversation.summary ?? undefined,
+          createdAt: conversation.createdAt,
           platform: conversation.platform
         },
         score: result.score,
@@ -112,25 +114,31 @@ export class SemanticSearch implements SearchEngine {
   }
 
   private getMessage(uuid: string): Message | null {
-    const stmt = this.db.prepare('SELECT * FROM messages WHERE uuid = ?')
-    const row = stmt.get(uuid) as any
+    const row = this.db
+      .select()
+      .from(messages)
+      .where(eq(messages.uuid, uuid))
+      .get()
 
     if (!row) return null
 
     return {
       uuid: row.uuid,
-      conversationUuid: row.conversation_uuid,
-      conversationIndex: row.conversation_index,
+      conversationUuid: row.conversationUuid,
+      conversationIndex: row.conversationIndex,
       sender: row.sender,
       text: row.text,
-      createdAt: new Date(row.created_at),
+      createdAt: row.createdAt,
       metadata: {}
     }
   }
 
-  private getConversation(uuid: string): any {
-    const stmt = this.db.prepare('SELECT * FROM conversations WHERE uuid = ?')
-    return stmt.get(uuid)
+  private getConversation(uuid: string) {
+    return this.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.uuid, uuid))
+      .get()
   }
 
   private getContextMessages(
@@ -141,23 +149,26 @@ export class SemanticSearch implements SearchEngine {
     if (startIndex < 0) startIndex = 0
     if (endIndex < startIndex) return []
 
-    const stmt = this.db.prepare(`
-      SELECT * FROM messages
-      WHERE conversation_uuid = ?
-        AND conversation_index >= ?
-        AND conversation_index <= ?
-      ORDER BY conversation_index ASC
-    `)
-
-    const rows = stmt.all(conversationUuid, startIndex, endIndex) as any[]
+    const rows = this.db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationUuid, conversationUuid),
+          gte(messages.conversationIndex, startIndex),
+          lte(messages.conversationIndex, endIndex)
+        )
+      )
+      .orderBy(messages.conversationIndex)
+      .all()
 
     return rows.map(row => ({
       uuid: row.uuid,
-      conversationUuid: row.conversation_uuid,
-      conversationIndex: row.conversation_index,
+      conversationUuid: row.conversationUuid,
+      conversationIndex: row.conversationIndex,
       sender: row.sender,
       text: row.text,
-      createdAt: new Date(row.created_at),
+      createdAt: row.createdAt,
       metadata: {}
     }))
   }

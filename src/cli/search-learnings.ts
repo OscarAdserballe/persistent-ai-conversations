@@ -2,8 +2,8 @@
 
 import { Command } from 'commander'
 import { loadConfig } from '../config'
-import { createDatabase } from '../db/database'
-import { createLearningSearch } from '../factories'
+import { createLearningSearch, createDatabase } from '../factories'
+import { getRawDb } from '../db/client'
 import { Learning } from '../core/types'
 
 const program = new Command()
@@ -68,7 +68,7 @@ program
 
       if (results.length === 0) {
         console.log('No learnings found.')
-        db.close()
+        getRawDb(db).close()
         process.exit(0)
       }
 
@@ -83,7 +83,7 @@ program
         }
       }
 
-      db.close()
+      getRawDb(db).close()
       process.exit(0)
 
     } catch (error) {

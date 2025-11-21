@@ -6,15 +6,15 @@ import {
   MockVectorStore,
   createMockLearnings,
 } from '../../../src/mocks';
-import Database from "better-sqlite3";
 import { ZodError } from "zod";
+import { createDrizzleDb, getRawDb, type DrizzleDB } from "../../../src/db/client";
 
 describe("LearningExtractorImpl", () => {
   let extractor: LearningExtractorImpl;
   let llm: MockLLMModel;
   let embedder: MockEmbeddingModel;
   let vectorStore: MockVectorStore;
-  let db: Database.Database;
+  let drizzleDb: DrizzleDB;
 
   const mockConversation = {
     uuid: "conv-123",
@@ -46,11 +46,14 @@ describe("LearningExtractorImpl", () => {
   };
 
   beforeEach(() => {
-    // Create in-memory database
-    db = new Database(":memory:");
+    // Create Drizzle-wrapped in-memory database
+    // Note: NOT calling initializeSchema - would need to use factory's createDatabase for that
+    // For unit tests, manually create minimal schema
+    drizzleDb = createDrizzleDb(":memory:");
+    const rawDb = getRawDb(drizzleDb);
 
-    // Create schema (new advanced schema)
-    db.exec(`
+    // Create minimal schema for tests (just what we need)
+    rawDb.exec(`
       CREATE TABLE learnings (
         learning_id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -67,12 +70,16 @@ describe("LearningExtractorImpl", () => {
         source_credit TEXT,
         conversation_uuid TEXT,
         embedding BLOB NOT NULL,
-        created_at DATETIME NOT NULL
+        created_at INTEGER NOT NULL
       );
 
       CREATE TABLE conversations (
         uuid TEXT PRIMARY KEY,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        platform TEXT NOT NULL,
+        message_count INTEGER NOT NULL
       );
     `);
 
@@ -82,8 +89,8 @@ describe("LearningExtractorImpl", () => {
     vectorStore = new MockVectorStore();
     vectorStore.initialize(768);
 
-    // Create extractor (vectorStore no longer used in constructor)
-    extractor = new LearningExtractorImpl(llm, embedder, db);
+    // Create extractor with DrizzleDB (uses type-safe queries now)
+    extractor = new LearningExtractorImpl(llm, embedder, drizzleDb);
   });
 
   describe("extractFromConversation", () => {
@@ -191,7 +198,7 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       // Embeddings should be stored in database, not vector store
-      const learnings = db
+      const learnings = getRawDb(drizzleDb)
         .prepare("SELECT learning_id, embedding FROM learnings")
         .all() as any[];
       expect(learnings.length).toBeGreaterThan(0);
@@ -211,7 +218,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db.prepare("SELECT * FROM learnings").all() as any[];
+      const stored = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all() as any[];
       expect(stored).toHaveLength(1);
       expect(stored[0].title).toBe("Database Test");
       // Tags should be JSON
@@ -231,7 +238,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db
+      const stored = getRawDb(drizzleDb)
         .prepare("SELECT conversation_uuid FROM learnings")
         .all() as any[];
       expect(stored).toHaveLength(1);
@@ -313,7 +320,7 @@ describe("LearningExtractorImpl", () => {
 
       await extractor.extractFromConversation(mockConversation);
 
-      const stored = db.prepare("SELECT tags FROM learnings").all() as any[];
+      const stored = getRawDb(drizzleDb).prepare("SELECT tags FROM learnings").all() as any[];
       const tags = JSON.parse(stored[0].tags);
       expect(tags).toContain("test-tag");
     });
@@ -347,7 +354,7 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       // Both should be inserted or neither (transaction)
-      const learnings = db.prepare("SELECT * FROM learnings").all();
+      const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
       expect(learnings).toHaveLength(2);
     });
   });
