@@ -38,6 +38,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
+    "@types/p-limit": "^2.1.0",
     "@vitest/coverage-v8": "^2.1.0",
     "drizzle-kit": "^0.31.7",
     "ts-node": "^10.9.2",

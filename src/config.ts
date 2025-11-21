@@ -50,7 +50,7 @@ function validateConfig(config: Config): void {
   }
 
   // Skip API key validation for mock provider
-  if (config.embedding.provider !== 'mock') {
+  if (config.embedding.provider !== "mock") {
     if (
       !config.embedding.apiKey ||
       config.embedding.apiKey === "YOUR_GEMINI_API_KEY_HERE"
@@ -92,7 +92,7 @@ function validateConfig(config: Config): void {
     }
 
     // Skip API key validation for mock provider
-    if (config.llm.provider !== 'mock') {
+    if (config.llm.provider !== "mock") {
       if (!config.llm.apiKey || config.llm.apiKey === "YOUR_API_KEY_HERE") {
         throw new Error(
           "Missing llm.apiKey - please set GEMINI_API_KEY in .env file or update config.json"
@@ -113,7 +113,7 @@ export function createDefaultConfig(overrides?: Partial<Config>): Config {
   const defaults: Config = {
     embedding: {
       provider: "mock",
-      apiKey: "",  // Not needed for mock provider
+      apiKey: "", // Not needed for mock provider
       model: "mock-embedding",
       dimensions: 768,
       batchSize: 100,
@@ -121,7 +121,7 @@ export function createDefaultConfig(overrides?: Partial<Config>): Config {
     },
     llm: {
       provider: "mock",
-      apiKey: "",  // Not needed for mock provider
+      apiKey: "", // Not needed for mock provider
       model: "mock-llm",
       temperature: 0.7,
       maxTokens: 2000,
@@ -140,6 +140,7 @@ export function createDefaultConfig(overrides?: Partial<Config>): Config {
     ingestion: {
       batchSize: 50,
       progressLogging: true,
+      concurrency: 50,
     },
   };
 

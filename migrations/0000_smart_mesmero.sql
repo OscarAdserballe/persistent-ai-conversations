@@ -1,33 +1,3 @@
-CREATE TABLE `_archived_learning_categories` (
-	`category_id` text PRIMARY KEY NOT NULL,
-	`name` text NOT NULL,
-	`description` text,
-	`created_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `_archived_learning_categories_name_unique` ON `_archived_learning_categories` (`name`);--> statement-breakpoint
-CREATE TABLE `_archived_learning_category_assignments` (
-	`learning_id` text NOT NULL,
-	`category_id` text NOT NULL,
-	`assigned_at` integer NOT NULL
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `archived_category_pk` ON `_archived_learning_category_assignments` (`learning_id`,`category_id`);--> statement-breakpoint
-CREATE TABLE `_archived_learning_sources` (
-	`learning_id` text NOT NULL,
-	`conversation_uuid` text,
-	`message_uuid` text
-);
---> statement-breakpoint
-CREATE TABLE `_archived_learnings` (
-	`learning_id` text PRIMARY KEY NOT NULL,
-	`title` text NOT NULL,
-	`content` text NOT NULL,
-	`created_at` integer NOT NULL,
-	`updated_at` integer,
-	`embedding` blob
-);
---> statement-breakpoint
 CREATE TABLE `conversations` (
 	`uuid` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,

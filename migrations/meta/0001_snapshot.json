@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a2e594c8-63d0-4e6d-954e-78ff091ea233",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "2803d739-4a47-4609-abfd-ce0395ac6fdf",
+  "prevId": "a2e594c8-63d0-4e6d-954e-78ff091ea233",
   "tables": {
     "conversations": {
       "name": "conversations",
@@ -57,13 +57,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
-        },
-        "embedding": {
-          "name": "embedding",
-          "type": "blob",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {

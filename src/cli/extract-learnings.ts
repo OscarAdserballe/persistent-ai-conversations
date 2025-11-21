@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import * as fs from "fs";
 import pLimit from "p-limit";
 import { loadConfig } from "../config";
 import { createLearningExtractor, createDatabase } from "../factories";
 import { getRawDb } from "../db/client";
-import { conversations as conversationsTable, messages as messagesTable, learnings as learningsTable } from "../db/schema";
+import {
+  conversations as conversationsTable,
+  messages as messagesTable,
+  learnings as learningsTable,
+} from "../db/schema";
 import { and, gte, lte, eq } from "drizzle-orm";
 import type {
   Conversation,

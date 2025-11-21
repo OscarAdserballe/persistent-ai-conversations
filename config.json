@@ -25,6 +25,7 @@
   },
   "ingestion": {
     "batchSize": 50,
-    "progressLogging": true
+    "progressLogging": true,
+    "concurrency": 50
   }
 }

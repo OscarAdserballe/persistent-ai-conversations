@@ -22,7 +22,6 @@ export const conversations = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     platform: text("platform").notNull().default("claude"),
     messageCount: integer("message_count").notNull().default(0),
-    embedding: blob("embedding", { mode: "buffer" }),
   },
   (table) => ({
     createdIdx: index("idx_conversations_created").on(table.createdAt),
@@ -76,52 +75,6 @@ export const messageChunks = sqliteTable(
       table.chunkIndex
     ),
   })
-);
-
-// ============================================================================
-// ARCHIVED TABLES (Old Schema - Preserved for Reference)
-// ============================================================================
-
-export const archivedLearnings = sqliteTable("_archived_learnings", {
-  learningId: text("learning_id").primaryKey(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
-  embedding: blob("embedding", { mode: "buffer" }),
-});
-
-export const archivedLearningCategories = sqliteTable(
-  "_archived_learning_categories",
-  {
-    categoryId: text("category_id").primaryKey(),
-    name: text("name").notNull().unique(),
-    description: text("description"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  }
-);
-
-export const archivedLearningCategoryAssignments = sqliteTable(
-  "_archived_learning_category_assignments",
-  {
-    learningId: text("learning_id").notNull(),
-    categoryId: text("category_id").notNull(),
-    assignedAt: integer("assigned_at", { mode: "timestamp_ms" })
-      .notNull()
-      .$default(() => new Date()),
-  },
-  (table) => ({
-    pk: unique("archived_category_pk").on(table.learningId, table.categoryId),
-  })
-);
-
-export const archivedLearningSources = sqliteTable(
-  "_archived_learning_sources",
-  {
-    learningId: text("learning_id").notNull(),
-    conversationUuid: text("conversation_uuid"),
-    messageUuid: text("message_uuid"),
-  }
 );
 
 // ============================================================================
