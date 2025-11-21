@@ -93,7 +93,6 @@ program
             updatedAt: conv.updatedAt,
             platform: conv.platform,
             messageCount: conv.messages.length,
-            embedding: null, // not computed during ingest
           });
         }
 
