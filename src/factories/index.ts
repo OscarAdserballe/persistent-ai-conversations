@@ -20,8 +20,28 @@ import { LearningSearchImpl } from "../services/learning-search";
 import { createDrizzleDb, getRawDb, DrizzleDB } from "../db/client";
 import { MockEmbeddingModel, MockLLMModel } from "../mocks";
 import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+
+/**
+ * Get absolute path to migrations folder.
+ * Works from any working directory by resolving relative to this file.
+ * Falls back to relative path if import.meta.url is unavailable.
+ */
+function getMigrationsPath(): string {
+  try {
+    // Try to use import.meta.url (works in ESM, production)
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    // This file is at src/factories/index.ts, so go up two levels to project root
+    const projectRoot = resolve(__dirname, "../..");
+    return resolve(projectRoot, "migrations");
+  } catch {
+    // Fallback to relative path (works when running from project root, like in tests)
+    return "./migrations";
+  }
+}
 
 /**
  * Factory for creating embedding models based on config.
@@ -66,7 +86,8 @@ export function createDatabase(path: string): DrizzleDB {
   const db = createDrizzleDb(path);
 
   // Run Drizzle migrations to create base tables
-  migrate(db, { migrationsFolder: "./migrations" });
+  // Use absolute path to migrations folder (works from any working directory)
+  migrate(db, { migrationsFolder: getMigrationsPath() });
 
   // Create FTS5 tables and triggers (Drizzle doesn't support FTS5 yet)
   const rawDb = getRawDb(db);

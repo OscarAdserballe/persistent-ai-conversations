@@ -9,6 +9,7 @@ A local conversation archive with semantic search and learning extraction for LL
 - **Semantic Search** - Find conversations using natural language queries with vector embeddings
 - **Learning Extraction** - Automatically identify and extract distilled insights from conversations using LLM analysis
 - **Learning Search** - Semantic search over extracted learnings with category filtering
+- **Isomorphism Engine** - 🆕 Interactive UI that bridges confusing concepts with your past learnings
 - **Smart Chunking** - Automatically splits large messages (>3000 chars) for better embedding quality
 - **Batch Processing** - Efficient embedding generation with rate limiting
 - **Context-Aware Results** - Search results include surrounding messages for better understanding
@@ -49,6 +50,11 @@ npm run extract-learnings
 
 # 6. Search your learnings
 npm run search-learnings "software architecture"
+
+# 7. 🆕 Launch the Isomorphism Engine (Interactive UI)
+npm run dev:isomorphism
+# Opens React UI at http://localhost:5173
+# API server at http://localhost:3001
 ```
 
 ## Installation
