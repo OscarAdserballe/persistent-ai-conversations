@@ -400,6 +400,7 @@ export interface Config {
   db: DatabaseConfig;
   search: SearchConfig;
   ingestion: IngestionConfig;
+  server?: ServerConfig;
 }
 
 export interface EmbeddingConfig {
@@ -436,4 +437,12 @@ export interface IngestionConfig {
   batchSize: number;
   progressLogging: boolean;
   concurrency: number;
+}
+
+export interface ServerConfig {
+  port: number;
+  host?: string;
+  cors?: {
+    origin: string;
+  };
 }

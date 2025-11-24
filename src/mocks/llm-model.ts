@@ -14,6 +14,7 @@ export class MockLLMModel implements LLMModel {
   private responseIndex = 0
   private structuredResponses: any[] = []
   private structuredResponseIndex = 0
+  private generateTextHandler?: (prompt: string, context?: string) => string
 
   /**
    * Configure mock responses for generateText. Will cycle through these responses.
@@ -56,10 +57,23 @@ export class MockLLMModel implements LLMModel {
     this.setStructuredResponse([])
   }
 
+  /**
+   * Set a custom handler for generateText calls.
+   * Useful for capturing context or providing dynamic responses.
+   */
+  setGenerateTextHandler(handler: (prompt: string, context?: string) => string) {
+    this.generateTextHandler = handler
+  }
+
   async generateText(prompt: string, context?: string): Promise<string> {
     this.callCount++
     this.lastPrompts.push(prompt)
     this.lastContexts.push(context)
+
+    // If handler is set, use it
+    if (this.generateTextHandler) {
+      return this.generateTextHandler(prompt, context)
+    }
 
     if (this.responses.length === 0) {
       // Default: return empty learnings array
@@ -102,6 +116,7 @@ export class MockLLMModel implements LLMModel {
     this.responseIndex = 0
     this.structuredResponses = []
     this.structuredResponseIndex = 0
+    this.generateTextHandler = undefined
   }
 
   /**

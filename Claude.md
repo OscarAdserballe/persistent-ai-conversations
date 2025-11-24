@@ -9,7 +9,7 @@
 3. ✅ Get architectural design approved
 4. ✅ **Write/update tests FIRST** (or alongside implementation)
 5. ✅ Implement the feature
-6. ✅ **Run `npm test` and fix ALL failures before considering the feature "done"**
+6. ✅ **Run `yarn test` and fix ALL failures before considering the feature "done"**
 
 **Never code without documentation first.** This ensures architectural consistency and makes the codebase maintainable.
 
@@ -192,8 +192,8 @@ src/
 
 - ❌ **NEVER** consider a feature complete without passing tests
 - ❌ **NEVER** commit code with failing tests
-- ❌ **NEVER** skip running `npm test` after making changes
-- ✅ **ALWAYS** run `npm test` before AND after implementing features
+- ❌ **NEVER** skip running `yarn test` after making changes
+- ✅ **ALWAYS** run `yarn test` before AND after implementing features
 - ✅ **ALWAYS** fix ALL test failures immediately
 - ✅ **ALWAYS** write tests for new features as you build them
 
@@ -201,25 +201,25 @@ src/
 
 **For every feature you implement, follow this workflow:**
 
-1. **Before coding:** Run `npm test` to ensure baseline passes
+1. **Before coding:** Run `yarn test` to ensure baseline passes
 2. **While coding:** Write tests alongside implementation (or write tests first!)
-3. **After coding:** Run `npm test` and fix ALL failures
-4. **Before committing:** Run `npm test` one final time
+3. **After coding:** Run `yarn test` and fix ALL failures
+4. **Before committing:** Run `yarn test` one final time
 
 **Example workflow:**
 
 ```bash
 # Step 1: Verify baseline
-npm test  # Should pass (235/235)
+yarn test  # Should pass (235/235)
 
 # Step 2: Implement feature + write tests
 # ... code and test files ...
 
 # Step 3: Run tests frequently during development - it's never "someone else's" problem
-npm test  # Fix any failures immediately
+yarn test  # Fix any failures immediately
 
 # Step 4: Final check before commit
-npm test  # Must pass 100% before commit
+yarn test  # Must pass 100% before commit
 ```
 
 ### What to Test
@@ -388,40 +388,6 @@ insertMany(items);
 
 ---
 
-## Prompt Engineering (for LLM Features)
-
-### Effective Prompts
-
-1. **Be explicit about output format:** "Return JSON array: [{...}]"
-2. **Provide examples:** Show exactly what good output looks like
-3. **Define constraints:** "Max 100 chars", "2-3 sentences"
-4. **Allow empty results:** "Return [] if no results"
-5. **Iterate based on results:** Refine prompt based on quality
-
-```typescript
-const GOOD_PROMPT = `
-Analyze this conversation and extract learnings.
-
-Return a JSON array. If no learnings, return [].
-
-Each learning must have:
-- title: Brief description (max 100 chars)
-- content: Detailed explanation (2-3 sentences)
-
-Example:
-[
-  {
-    "title": "Database Indexing Strategy",
-    "content": "Learned that composite indexes should be ordered..."
-  }
-]
-
-Conversation:
-`.trim();
-```
-
----
-
 ## Git Workflow
 
 ### Commit Messages
@@ -500,7 +466,7 @@ Contents:
 ### Step 4: Verify Baseline
 
 ```bash
-npm test  # Ensure all 235 tests pass before starting
+yarn test  # Ensure all 235 tests pass before starting
 ```
 
 ### Step 5: Implement WITH Tests
@@ -521,20 +487,20 @@ tests/integration/openai-embedding.test.ts # Integration tests
 
 ```bash
 # Run tests after each major change
-npm test  # Fix any failures immediately
+yarn test  # Fix any failures immediately
 
 # Run specific test file during development
-npm test -- tests/unit/embeddings/openai.test.ts
+yarn test tests/unit/embeddings/openai.test.ts
 ```
 
 ### Step 7: Final Verification
 
 ```bash
 # All tests must pass
-npm test  # Must show 235+ tests passing (added new tests)
+yarn test  # Must show 235+ tests passing (added new tests)
 
 # Manual smoke test
-npm run ingest -- --provider openai
+yarn ingest --provider openai
 ```
 
 ### Step 8: Commit Only When Tests Pass
@@ -542,7 +508,7 @@ npm run ingest -- --provider openai
 ```bash
 git add .
 git commit -m "feat(embeddings): add OpenAI embedding support"
-# Only commit if npm test passes 100%
+# Only commit if yarn test passes 100%
 ```
 
 ---
@@ -630,18 +596,18 @@ if (status === "pending") {
 - [ ] Identify what's reused vs. new
 - [ ] Create implementation checklist
 - [ ] Get design approved
-- [ ] **Run `npm test` to verify baseline passes**
+- [ ] **Run `yarn test` to verify baseline passes**
 
 ### During Implementation
 
 - [ ] Write tests alongside code (or test-first)
-- [ ] Run `npm test` frequently to catch issues early
+- [ ] Run `yarn test` frequently to catch issues early
 - [ ] Fix test failures immediately, don't let them accumulate
 - [ ] Ensure mock implementations match interface changes
 
 ### Before Considering Feature "Done"
 
-- [ ] **ALL tests pass (`npm test` shows 100% pass rate)**
+- [ ] **ALL tests pass (`yarn test` shows 100% pass rate)**
 - [ ] New functionality has unit tests
 - [ ] Edge cases are tested
 - [ ] Integration tests cover end-to-end flows
@@ -650,7 +616,7 @@ if (status === "pending") {
 
 ### Before Committing
 
-- [ ] **Final `npm test` run - MUST be 100% passing**
+- [ ] **Final `yarn test` run - MUST be 100% passing**
 - [ ] Code follows architecture patterns
 - [ ] Documentation updated if needed
 - [ ] Commit message follows conventional commits format
