@@ -114,6 +114,18 @@ This will:
 # Basic search
 npm run search "typescript dependency injection patterns"
 
+# Limit results (default: 10)
+npm run search "async patterns" --limit 5
+
+# Filter by sender
+npm run search "debugging tips" --sender human
+npm run search "code examples" --sender assistant
+
+# Filter by date range
+npm run search "performance" --after 2024-01-01
+npm run search "architecture" --before 2024-12-31
+npm run search "react" --after 2024-01-01 --before 2024-06-30
+
 # Search will return:
 # - Most relevant messages with similarity scores
 # - Conversation context (2 messages before, 1 after)
@@ -122,10 +134,7 @@ npm run search "typescript dependency injection patterns"
 
 **Search Options** (future):
 
-- Filter by date range
-- Filter by sender (human/assistant)
-- Filter by specific conversations
-- Adjust result limit
+- Filter by specific conversations (backend supports this via `conversationUuids`)
 
 ### Extract Learnings
 
