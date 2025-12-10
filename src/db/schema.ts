@@ -78,37 +78,14 @@ export const messageChunks = sqliteTable(
 );
 
 // ============================================================================
-// LEARNINGS TABLE (Advanced Epistemic Introspection Schema)
+// LEARNINGS TABLE (Simplified Learning Artifact Schema)
 // ============================================================================
 
 // Type definitions for JSON columns
-export type Abstraction = {
-  concrete: string;
-  pattern: string;
-  principle?: string;
+export type FAQItem = {
+  question: string;
+  answer: string;
 };
-
-export type Understanding = {
-  confidence: number;
-  can_teach_it: boolean;
-  known_gaps?: string[];
-};
-
-export type Effort = {
-  processing_time: "5min" | "30min" | "2hr" | "days";
-  cognitive_load: "easy" | "moderate" | "hard" | "breakthrough";
-};
-
-export type Resonance = {
-  intensity: number;
-  valence: "positive" | "negative" | "mixed";
-};
-
-export type LearningType =
-  | "principle"
-  | "method"
-  | "anti_pattern"
-  | "exception";
 
 export const learnings = sqliteTable(
   "learnings",
@@ -117,27 +94,12 @@ export const learnings = sqliteTable(
 
     // Core fields
     title: text("title").notNull(),
-    context: text("context").notNull(),
+    trigger: text("trigger").notNull(),
     insight: text("insight").notNull(),
-    why: text("why").notNull(),
-    implications: text("implications").notNull(),
 
-    // JSON columns with type inference
-    tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
-    abstraction: text("abstraction", { mode: "json" })
-      .$type<Abstraction>()
-      .notNull(),
-    understanding: text("understanding", { mode: "json" })
-      .$type<Understanding>()
-      .notNull(),
-    effort: text("effort", { mode: "json" }).$type<Effort>().notNull(),
-    resonance: text("resonance", { mode: "json" }).$type<Resonance>().notNull(),
-
-    // Classification
-    learningType: text("learning_type", {
-      enum: ["principle", "method", "anti_pattern", "exception"],
-    }).$type<LearningType>(),
-    sourceCredit: text("source_credit"),
+    // JSON columns
+    whyPoints: text("why_points", { mode: "json" }).$type<string[]>().notNull(),
+    faq: text("faq", { mode: "json" }).$type<FAQItem[]>().notNull(),
 
     // Source tracking
     conversationUuid: text("conversation_uuid").references(
@@ -153,7 +115,6 @@ export const learnings = sqliteTable(
   },
   (table) => ({
     createdIdx: index("idx_learnings_created").on(table.createdAt),
-    typeIdx: index("idx_learnings_type").on(table.learningType),
     conversationIdx: index("idx_learnings_conversation").on(
       table.conversationUuid
     ),

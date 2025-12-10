@@ -12,13 +12,16 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "dev:isomorphism": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "ingest": "tsx src/cli/ingest.ts",
     "search": "tsx src/cli/search.ts",
     "extract-learnings": "tsx src/cli/extract-learnings.ts",
+    "eval": "tsx src/cli/eval.ts",
+    "eval:generate": "tsx src/cli/generate-eval-dataset.ts",
+    "eval:sync": "tsx src/cli/sync-eval-dataset-to-langfuse.ts",
     "search-learnings": "tsx src/cli/search-learnings.ts",
+    "playground": "tsx src/cli/prompt-playground.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -36,6 +39,7 @@
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
+    "@langfuse/client": "^4.4.2",
     "@openrouter/ai-sdk-provider": "^1.2.5",
     "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
     "@opentelemetry/resources": "^2.2.0",
@@ -48,6 +52,7 @@
     "drizzle-orm": "^0.44.7",
     "langfuse": "^3.38.6",
     "p-limit": "^7.2.0",
+    "yaml": "^2.8.1",
     "zod": "^4.1.13"
   },
   "devDependencies": {

@@ -333,6 +333,34 @@
   resolved "https://registry.npmjs.org/@js-sdsl/ordered-map/-/ordered-map-4.4.2.tgz"
   integrity sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==
 
+"@langfuse/client@^4.4.2":
+  version "4.4.2"
+  resolved "https://registry.npmjs.org/@langfuse/client/-/client-4.4.2.tgz"
+  integrity sha512-T0AvkCDkze3mhFbix6sC6y1FzQTBxKI3vCa8q8kErcwH8nIpr0Efo6XbT/qQEpiKBCPE2ys6aFhqfbjJ64XAmw==
+  dependencies:
+    "@langfuse/core" "^4.4.2"
+    "@langfuse/tracing" "^4.4.2"
+    mustache "^4.2.0"
+
+"@langfuse/core@^4.4.2", "@langfuse/core@^4.4.9":
+  version "4.4.9"
+  resolved "https://registry.npmjs.org/@langfuse/core/-/core-4.4.9.tgz"
+  integrity sha512-9Hz/eH6dkOP8E/FLt1fsAQR8RE/TF8Ag/39GmY8JjN1o/Tl/MFJfK2QvqRGrkjDkIkMJGOSD+iQmV2pYm4upDA==
+
+"@langfuse/otel@^4.4.2":
+  version "4.4.9"
+  resolved "https://registry.npmjs.org/@langfuse/otel/-/otel-4.4.9.tgz"
+  integrity sha512-T9tSucDC3cvdeUB8fTGXm6ZZcC4kOEreJuM/C66nHQ26+DWtx2AN75JWuadc2E+VU/K+BjTb5XAkBceWYtvXjw==
+  dependencies:
+    "@langfuse/core" "^4.4.9"
+
+"@langfuse/tracing@^4.4.2":
+  version "4.4.2"
+  resolved "https://registry.npmjs.org/@langfuse/tracing/-/tracing-4.4.2.tgz"
+  integrity sha512-+99jL4BLus0yKk8UvPyJbTfVs9A6edDeSe/WMyjk5jwl2qrrSCWDorKn+90XUvJVLdlbgdFKq4CqQ6YPLIcwYQ==
+  dependencies:
+    "@langfuse/core" "^4.4.2"
+
 "@openrouter/ai-sdk-provider@^1.2.5":
   version "1.2.5"
   resolved "https://registry.npmjs.org/@openrouter/ai-sdk-provider/-/ai-sdk-provider-1.2.5.tgz"
@@ -354,7 +382,7 @@
   dependencies:
     "@opentelemetry/api" "^1.3.0"
 
-"@opentelemetry/api@^1.0.0", "@opentelemetry/api@^1.3.0", "@opentelemetry/api@^1.4.1", "@opentelemetry/api@>=1.0.0 <1.10.0", "@opentelemetry/api@>=1.3.0 <1.10.0", "@opentelemetry/api@>=1.4.0 <1.10.0", "@opentelemetry/api@>=1.9.0 <1.10.0", "@opentelemetry/api@1.9.0":
+"@opentelemetry/api@^1.0.0", "@opentelemetry/api@^1.3.0", "@opentelemetry/api@^1.4.1", "@opentelemetry/api@^1.9.0", "@opentelemetry/api@>=1.0.0 <1.10.0", "@opentelemetry/api@>=1.3.0 <1.10.0", "@opentelemetry/api@>=1.4.0 <1.10.0", "@opentelemetry/api@>=1.9.0 <1.10.0", "@opentelemetry/api@1.9.0":
   version "1.9.0"
   resolved "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.0.tgz"
   integrity sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==
@@ -364,7 +392,7 @@
   resolved "https://registry.npmjs.org/@opentelemetry/context-async-hooks/-/context-async-hooks-2.2.0.tgz"
   integrity sha512-qRkLWiUEZNAmYapZ7KGS5C4OmBLcP/H2foXeOEaowYCR0wi89fHejrfYfbuLVCMLp/dWZXKvQusdbUEZjERfwQ==
 
-"@opentelemetry/core@2.2.0":
+"@opentelemetry/core@^2.0.1", "@opentelemetry/core@2.2.0":
   version "2.2.0"
   resolved "https://registry.npmjs.org/@opentelemetry/core/-/core-2.2.0.tgz"
   integrity sha512-FuabnnUm8LflnieVxs6eP7Z383hgQU4W1e3KJS6aOG3RxWxcHyBxH8fDMHNgu/gFx/M2jvTOW/4/PHhLz6bjWw==
@@ -466,7 +494,7 @@
     "@opentelemetry/resources" "2.2.0"
     "@opentelemetry/sdk-trace-base" "2.2.0"
 
-"@opentelemetry/exporter-trace-otlp-http@^0.208.0", "@opentelemetry/exporter-trace-otlp-http@0.208.0":
+"@opentelemetry/exporter-trace-otlp-http@^0.208.0", "@opentelemetry/exporter-trace-otlp-http@>=0.202.0 <1.0.0", "@opentelemetry/exporter-trace-otlp-http@0.208.0":
   version "0.208.0"
   resolved "https://registry.npmjs.org/@opentelemetry/exporter-trace-otlp-http/-/exporter-trace-otlp-http-0.208.0.tgz"
   integrity sha512-jbzDw1q+BkwKFq9yxhjAJ9rjKldbt5AgIy1gmEIJjEV/WRxQ3B6HcLVkwbjJ3RcMif86BDNKR846KJ0tY0aOJA==
@@ -605,7 +633,7 @@
     "@opentelemetry/sdk-trace-node" "2.2.0"
     "@opentelemetry/semantic-conventions" "^1.29.0"
 
-"@opentelemetry/sdk-trace-base@2.2.0":
+"@opentelemetry/sdk-trace-base@^2.0.1", "@opentelemetry/sdk-trace-base@2.2.0":
   version "2.2.0"
   resolved "https://registry.npmjs.org/@opentelemetry/sdk-trace-base/-/sdk-trace-base-2.2.0.tgz"
   integrity sha512-xWQgL0Bmctsalg6PaXExmzdedSp3gyKV8mQBwK/j9VGdCDu2fmXIb2gAehBKbkXCpJ4HPkgv3QfoJWRT4dHWbw==
@@ -1292,6 +1320,8 @@ cjs-module-lexer@^1.2.2:
   dependencies:
     react "^18.2.0"
     react-dom "^18.2.0"
+    react-markdown "^10.1.0"
+    remark-gfm "^4.0.1"
 
 cliui@^8.0.1:
   version "8.0.1"
@@ -1476,9 +1506,9 @@ dotenv@^17.2.3:
   integrity sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==
 
 drizzle-kit@^0.31.7:
-  version "0.31.7"
-  resolved "https://registry.npmjs.org/drizzle-kit/-/drizzle-kit-0.31.7.tgz"
-  integrity sha512-hOzRGSdyKIU4FcTSFYGKdXEjFsncVwHZ43gY3WU5Bz9j5Iadp6Rh6hxLSQ1IWXpKLBKt/d5y1cpSPcV+FcoQ1A==
+  version "0.31.8"
+  resolved "https://registry.npmjs.org/drizzle-kit/-/drizzle-kit-0.31.8.tgz"
+  integrity sha512-O9EC/miwdnRDY10qRxM8P3Pg8hXe3LyU4ZipReKOgTwn4OqANmftj8XJz1UPUAS6NMHf0E2htjsbQujUTkncCg==
   dependencies:
     "@drizzle-team/brocli" "^0.10.2"
     "@esbuild-kit/esm-loader" "^2.5.5"
@@ -1878,9 +1908,9 @@ github-from-package@0.0.0:
   integrity sha512-SyHy3T1v2NUXn29OsWdxmK6RwHD+vkj3v8en8AOBZ1wBQ/hCAQ5bAQTD02kW4W9tUp/3Qh6J8r9EvntiyCmOOw==
 
 glob@^10.4.1:
-  version "10.4.5"
-  resolved "https://registry.npmjs.org/glob/-/glob-10.4.5.tgz"
-  integrity sha512-7Bv8RF0k6xjo7d4A/PxYLbUCfb6c+Vpd2/mB2yRDlew7Jb5hEXiCD9ibfO7wpk8i4sevK6DFny9h7EYbM3/sHg==
+  version "10.5.0"
+  resolved "https://registry.npmjs.org/glob/-/glob-10.5.0.tgz"
+  integrity sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==
   dependencies:
     foreground-child "^3.1.0"
     jackspeak "^3.1.2"
@@ -3144,6 +3174,7 @@ serve-static@1.16.2:
   version "1.0.0"
   resolved "file:server"
   dependencies:
+    "@langfuse/otel" "^4.4.2"
     cors "^2.8.5"
     express "^4.18.2"
 
@@ -3719,6 +3750,11 @@ yallist@^3.0.2:
   version "3.1.1"
   resolved "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz"
   integrity sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==
+
+yaml@^2.8.1:
+  version "2.8.1"
+  resolved "https://registry.npmjs.org/yaml/-/yaml-2.8.1.tgz"
+  integrity sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw==
 
 yargs-parser@^21.1.1:
   version "21.1.1"

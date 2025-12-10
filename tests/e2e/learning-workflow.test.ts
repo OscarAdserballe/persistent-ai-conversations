@@ -1,17 +1,18 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { unlinkSync, existsSync, writeFileSync, readFileSync } from "fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { unlinkSync, existsSync } from "fs";
 import { join } from "path";
 import { createDatabase } from "../../src/factories";
 import { getRawDb, type DrizzleDB } from "../../src/db/client";
 import { SqliteVectorStore } from "../../src/db/vector-store";
 import { LearningExtractorImpl } from "../../src/services/learning-extractor";
 import { LearningSearchImpl } from "../../src/services/learning-search";
-import {
-  MockLLMModel,
-  MockEmbeddingModel,
-  createMockLearnings,
-} from '../../src/mocks';
+import { MockEmbeddingModel, createMockLearnings } from "../../src/mocks";
+import { generateObject } from "ai";
 import type { Conversation } from "../../src/core/types";
+
+vi.mock("ai", () => ({
+  generateObject: vi.fn(),
+}));
 
 describe("Learning Workflow E2E", () => {
   const testDbPath = join(__dirname, "../tmp/learning-workflow-e2e-test.db");
@@ -19,10 +20,22 @@ describe("Learning Workflow E2E", () => {
 
   let drizzleDb: DrizzleDB;
   let vectorStore: SqliteVectorStore;
-  let llm: MockLLMModel;
   let embedder: MockEmbeddingModel;
   let extractor: LearningExtractorImpl;
   let search: LearningSearchImpl;
+  const generateObjectMock = vi.mocked(generateObject);
+
+  const queueLLMResponse = (
+    learnings: ReturnType<typeof createMockLearnings>
+  ) => {
+    generateObjectMock.mockResolvedValueOnce({ object: learnings });
+  };
+
+  const queueEmptyResponse = () => {
+    generateObjectMock.mockResolvedValueOnce({ object: [] });
+  };
+
+  const TEST_PROMPT = "E2E prompt";
 
   beforeEach(() => {
     // Clean up any existing files
@@ -37,15 +50,21 @@ describe("Learning Workflow E2E", () => {
     drizzleDb = createDatabase(testDbPath);
 
     // Create mocks
-    llm = new MockLLMModel();
     embedder = new MockEmbeddingModel();
+    generateObjectMock.mockReset();
+    generateObjectMock.mockResolvedValue({ object: [] });
 
     // Create vector store
     vectorStore = new SqliteVectorStore(getRawDb(drizzleDb));
     vectorStore.initialize(embedder.dimensions);
 
     // Create extractor and search
-    extractor = new LearningExtractorImpl(llm, embedder, drizzleDb);
+    extractor = new LearningExtractorImpl(
+      {} as any,
+      embedder,
+      drizzleDb,
+      TEST_PROMPT
+    );
     search = new LearningSearchImpl(embedder, vectorStore, drizzleDb);
   });
 
@@ -100,28 +119,29 @@ describe("Learning Workflow E2E", () => {
       "TypeScript"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conversation.uuid,
-      conversation.title,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conversation.platform,
-      conversation.messages.length
-    );
+      )
+      .run(
+        conversation.uuid,
+        conversation.title,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conversation.platform,
+        conversation.messages.length
+      );
 
     // 2. Extract learnings
-    llm.setStructuredResponse(
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Basics",
           insight:
             "TypeScript adds static typing to JavaScript for better developer experience.",
-          tags: ["programming", "typescript"],
         },
       ])
     );
@@ -136,7 +156,6 @@ describe("Learning Workflow E2E", () => {
 
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].learning.title).toBe("TypeScript Basics");
-    expect(results[0].learning.tags.length).toBe(2);
     expect(results[0].sourceConversation?.title).toBe("TypeScript Tutorial");
   });
 
@@ -147,60 +166,65 @@ describe("Learning Workflow E2E", () => {
       "nothing important"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conversation.uuid,
-      conversation.title,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conversation.platform,
-      conversation.messages.length
-    );
+      )
+      .run(
+        conversation.uuid,
+        conversation.title,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conversation.platform,
+        conversation.messages.length
+      );
 
     // LLM returns empty array (no learnings)
-    llm.setEmptyLearnings();
+    queueEmptyResponse();
 
     const learnings = await extractor.extractFromConversation(conversation);
 
     expect(learnings).toEqual([]);
 
     // Verify nothing in DB
-    const storedLearnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
+    const storedLearnings = getRawDb(drizzleDb)
+      .prepare("SELECT * FROM learnings")
+      .all();
     expect(storedLearnings).toHaveLength(0);
   });
 
   it("should handle incremental extraction", async () => {
-    // First extraction creates learning with tags
+    // First extraction creates learning
     const conv1 = createConversation(
       "conv-1",
       "TypeScript Tutorial",
       "TypeScript"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conv1.uuid,
-      conv1.title,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conv1.platform,
-      conv1.messages.length
-    );
+      )
+      .run(
+        conv1.uuid,
+        conv1.title,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conv1.platform,
+        conv1.messages.length
+      );
 
-    llm.setStructuredResponse(
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Basics",
           insight: "TypeScript content",
-          tags: ["programming", "typescript"],
         },
       ])
     );
@@ -208,44 +232,49 @@ describe("Learning Workflow E2E", () => {
     await extractor.extractFromConversation(conv1);
 
     // Verify first learning was created
-    const learningsAfterFirst = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
+    const learningsAfterFirst = getRawDb(drizzleDb)
+      .prepare("SELECT * FROM learnings")
+      .all();
     expect(learningsAfterFirst).toHaveLength(1);
 
-    // Second extraction creates another learning with same tags
+    // Second extraction creates another learning
     const conv2 = createConversation(
       "conv-2",
       "TypeScript Advanced",
       "advanced TypeScript"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conv2.uuid,
-      conv2.title,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conv2.platform,
-      conv2.messages.length
-    );
+      )
+      .run(
+        conv2.uuid,
+        conv2.title,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conv2.platform,
+        conv2.messages.length
+      );
 
-    llm.setStructuredResponse(
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Generics",
           insight: "Generics provide type safety",
-          tags: ["programming", "typescript"], // Same tags
         },
       ])
     );
 
     await extractor.extractFromConversation(conv2);
 
-    // Verify 2 learnings created (tags are stored as JSON in each learning)
-    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
+    // Verify 2 learnings created
+    const learnings = getRawDb(drizzleDb)
+      .prepare("SELECT * FROM learnings")
+      .all();
     expect(learnings).toHaveLength(2);
   });
 
@@ -257,38 +286,40 @@ describe("Learning Workflow E2E", () => {
     ];
 
     for (const conv of conversations) {
-      getRawDb(drizzleDb).prepare(
-        `
+      getRawDb(drizzleDb)
+        .prepare(
+          `
         INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
         VALUES (?, ?, ?, ?, ?, ?)
       `
-      ).run(
-        conv.uuid,
-        conv.title,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        conv.platform,
-        conv.messages.length
-      );
+        )
+        .run(
+          conv.uuid,
+          conv.title,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          conv.platform,
+          conv.messages.length
+        );
     }
 
     // Set up responses for both extractions
-    llm.setStructuredResponses([
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Introduction",
           insight: "TypeScript is a typed superset of JavaScript.",
-          tags: ["typescript", "programming"],
         },
-      ]),
+      ])
+    );
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "Python Basics",
           insight: "Python is a high-level programming language.",
-          tags: ["python", "programming"],
         },
-      ]),
-    ]);
+      ])
+    );
 
     // Extract from both
     await extractor.extractFromConversation(conversations[0]);
@@ -319,27 +350,28 @@ describe("Learning Workflow E2E", () => {
       "TypeScript"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, summary, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conversation.uuid,
-      conversation.title,
-      "A detailed discussion",
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conversation.platform,
-      conversation.messages.length
-    );
+      )
+      .run(
+        conversation.uuid,
+        conversation.title,
+        "A detailed discussion",
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conversation.platform,
+        conversation.messages.length
+      );
 
-    llm.setStructuredResponse(
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Learning",
           insight: "Content about TypeScript",
-          tags: [],
         },
       ])
     );
@@ -378,31 +410,34 @@ describe("Learning Workflow E2E", () => {
       );
       conversations.push(conv);
 
-      getRawDb(drizzleDb).prepare(
-        `
+      getRawDb(drizzleDb)
+        .prepare(
+          `
         INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
         VALUES (?, ?, ?, ?, ?, ?)
       `
-      ).run(
-        conv.uuid,
-        conv.title,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        conv.platform,
-        conv.messages.length
-      );
+        )
+        .run(
+          conv.uuid,
+          conv.title,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          conv.platform,
+          conv.messages.length
+        );
     }
 
-    // Configure LLM to return 1 learning per conversation
-    llm.setStructuredResponse(
-      createMockLearnings([
-        {
-          title: "Learning from conversation",
-          insight: "Some learning content",
-          tags: ["programming"],
-        },
-      ])
-    );
+    // Configure LLM to return 1 learning per conversation (queue 50 responses)
+    for (let i = 0; i < 50; i++) {
+      queueLLMResponse(
+        createMockLearnings([
+          {
+            title: `Learning from conversation ${i}`,
+            insight: "Some learning content",
+          },
+        ])
+      );
+    }
 
     // Extract from all (with performance timing)
     const startTime = Date.now();
@@ -415,7 +450,9 @@ describe("Learning Workflow E2E", () => {
     const duration = endTime - startTime;
 
     // Verify all learnings were created
-    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all();
+    const learnings = getRawDb(drizzleDb)
+      .prepare("SELECT * FROM learnings")
+      .all();
     expect(learnings.length).toBe(50);
 
     // Performance check: should complete in reasonable time (< 5 seconds for 50 extractions with mocks)
@@ -430,43 +467,59 @@ describe("Learning Workflow E2E", () => {
     expect(learningsWithSource.count).toBe(50);
   });
 
-  it("should handle complex tag relationships", async () => {
+  it("should handle learnings with multiple why_points and FAQ items", async () => {
     const conv = createConversation(
       "conv-1",
       "Full Stack Development",
       "full stack"
     );
 
-    getRawDb(drizzleDb).prepare(
-      `
+    getRawDb(drizzleDb)
+      .prepare(
+        `
       INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
       VALUES (?, ?, ?, ?, ?, ?)
     `
-    ).run(
-      conv.uuid,
-      conv.title,
-      new Date().toISOString(),
-      new Date().toISOString(),
-      conv.platform,
-      conv.messages.length
-    );
+      )
+      .run(
+        conv.uuid,
+        conv.title,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        conv.platform,
+        conv.messages.length
+      );
 
-    llm.setStructuredResponse(
+    queueLLMResponse(
       createMockLearnings([
         {
           title: "Frontend Frameworks",
           insight: "React and Vue are popular frontend frameworks",
-          tags: ["frontend", "javascript", "frameworks"],
+          why_points: ["Easy to learn", "Great ecosystem", "Component-based"],
+          faq: [
+            { question: "Which is faster?", answer: "Both are performant" },
+            {
+              question: "Which has better docs?",
+              answer: "React has more resources",
+            },
+          ],
         },
         {
           title: "Backend APIs",
           insight: "REST and GraphQL are common API patterns",
-          tags: ["backend", "api", "architecture"],
+          why_points: ["Standardized", "Well-documented", "Scalable"],
+          faq: [
+            { question: "When to use GraphQL?", answer: "Complex nested data" },
+          ],
         },
         {
           title: "Database Design",
           insight: "SQL and NoSQL databases have different use cases",
-          tags: ["database", "backend", "architecture"],
+          why_points: ["ACID compliance", "Flexibility", "Performance"],
+          faq: [
+            { question: "When to use NoSQL?", answer: "Unstructured data" },
+            { question: "When to use SQL?", answer: "Relational data" },
+          ],
         },
       ])
     );
@@ -474,26 +527,33 @@ describe("Learning Workflow E2E", () => {
     await extractor.extractFromConversation(conv);
 
     // Verify all 3 learnings were created
-    const learnings = getRawDb(drizzleDb).prepare("SELECT * FROM learnings").all() as any[];
+    const learnings = getRawDb(drizzleDb)
+      .prepare("SELECT * FROM learnings")
+      .all() as any[];
     expect(learnings).toHaveLength(3);
 
-    // Verify tags are stored correctly as JSON
-    const parsedTags = learnings.map((l: any) => JSON.parse(l.tags));
-    expect(parsedTags[0]).toEqual(["frontend", "javascript", "frameworks"]);
-    expect(parsedTags[1]).toEqual(["backend", "api", "architecture"]);
-    expect(parsedTags[2]).toEqual(["database", "backend", "architecture"]);
+    // Verify why_points are stored correctly as JSON
+    const parsedWhyPoints = learnings.map((l: any) => JSON.parse(l.why_points));
+    expect(parsedWhyPoints[0]).toEqual([
+      "Easy to learn",
+      "Great ecosystem",
+      "Component-based",
+    ]);
+    expect(parsedWhyPoints[1]).toEqual([
+      "Standardized",
+      "Well-documented",
+      "Scalable",
+    ]);
+    expect(parsedWhyPoints[2]).toEqual([
+      "ACID compliance",
+      "Flexibility",
+      "Performance",
+    ]);
 
-    // Verify tag overlap (backend and architecture appear in multiple learnings)
-    const learningsWithBackend = learnings.filter((l: any) => {
-      const tags = JSON.parse(l.tags);
-      return tags.includes("backend");
-    });
-    expect(learningsWithBackend).toHaveLength(2);
-
-    const learningsWithArchitecture = learnings.filter((l: any) => {
-      const tags = JSON.parse(l.tags);
-      return tags.includes("architecture");
-    });
-    expect(learningsWithArchitecture).toHaveLength(2);
+    // Verify FAQ items are stored correctly
+    const parsedFaq = learnings.map((l: any) => JSON.parse(l.faq));
+    expect(parsedFaq[0]).toHaveLength(2);
+    expect(parsedFaq[1]).toHaveLength(1);
+    expect(parsedFaq[2]).toHaveLength(2);
   });
 });

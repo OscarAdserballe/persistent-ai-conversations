@@ -1,0 +1,22 @@
+# Evaluation experiments configuration
+# Edit this file to define which models/prompts to test
+
+dataset: evaluation/learning-extraction
+concurrency: 10
+
+experiments:
+  # - model: anthropic/claude-opus-4.5
+  #   promptName: smaller_schema
+
+  # - model: anthropic/claude-haiku-4.5
+  #   promptName: smaller_schema
+
+  # - model: google/gemini-3-pro-preview
+  #   promptName: smaller_schema
+
+  # - model: google/gemini-2.5-flash
+  #   promptName: smaller_schema
+
+  - model: google/gemini-2.5-flash-lite
+    promptName: smaller_schema
+

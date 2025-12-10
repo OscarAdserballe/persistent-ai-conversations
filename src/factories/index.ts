@@ -6,7 +6,6 @@ import {
   VectorStoreExtended,
   SearchEngine,
   ConversationImporter,
-  LLMModel,
   LearningExtractor,
   LearningSearch,
 } from "../core/types";
@@ -14,15 +13,15 @@ import { GeminiEmbedding } from "../embeddings/gemini";
 import { SqliteVectorStore } from "../db/vector-store";
 import { SemanticSearch } from "../search/semantic";
 import { ClaudeImporter } from "../importers/claude";
-import { GeminiFlash } from "../llm/gemini-flash";
 import { LearningExtractorImpl } from "../services/learning-extractor";
 import { LearningSearchImpl } from "../services/learning-search";
 import { createDrizzleDb, getRawDb, DrizzleDB } from "../db/client";
-import { MockEmbeddingModel, MockLLMModel } from "../mocks";
+import { MockEmbeddingModel } from "../mocks";
 import { mkdirSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { getModel } from "../llm/client";
 
 /**
  * Get absolute path to migrations folder.
@@ -197,52 +196,34 @@ export function createImporter(platform: string): ConversationImporter {
 }
 
 /**
- * Factory for creating LLM models for text generation.
- * Separate from createEmbeddingModel (different purpose).
- */
-export function createLLMModel(config: Config): LLMModel {
-  switch (config.llm.provider) {
-    case "mock":
-      return new MockLLMModel();
-
-    case "gemini":
-      return new GeminiFlash({
-        apiKey: config.llm.apiKey,
-        model: config.llm.model,
-        temperature: config.llm.temperature,
-        maxTokens: config.llm.maxTokens,
-        rateLimitDelayMs: config.llm.rateLimitDelayMs,
-      });
-
-    // Future:
-    // case 'openai':
-    //   return new GPT4oMini(config.llm)
-    // case 'anthropic':
-    //   return new ClaudeHaiku(config.llm)
-
-    default:
-      throw new Error(`Unknown LLM provider: ${config.llm.provider}`);
-  }
-}
-
-/**
  * Factory for creating fully-wired learning extractor.
  * Coordinates LLM, embedder, vector store, and database.
  */
 export function createLearningExtractor(
   config: Config,
-  db?: DrizzleDB
+  db?: DrizzleDB,
+  promptTemplate?: string
 ): LearningExtractor {
   const database = db || createDatabase(config.db.path);
-  const llm = createLLMModel(config);
   const embedder = createEmbeddingModel(config);
   const vectorStore = createVectorStore(database);
 
   // Initialize vector store with embedding dimensions
   vectorStore.initialize(embedder.dimensions);
 
+  // Create Vercel AI SDK model instance via simplified client
+  // Use configured model name or default to gemini
+  const modelName = config.llm.model || "google/gemini-flash-1.5";
+  const llm = getModel(modelName);
+
   // Pass DrizzleDB directly - service uses type-safe queries now!
-  return new LearningExtractorImpl(llm, embedder, database);
+  if (!promptTemplate) {
+    throw new Error(
+      "createLearningExtractor requires a prompt template. Fetch it (e.g., via getLangfusePrompt) before calling this factory."
+    );
+  }
+
+  return new LearningExtractorImpl(llm, embedder, database, promptTemplate);
 }
 
 /**
