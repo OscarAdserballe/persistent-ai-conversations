@@ -1,15 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { IsomorphismEngineImpl } from "../../server/services/isomorphism-engine.js";
-import {
-  MockLLMModel,
-  createMockLearnings,
-} from "../../src/mocks/index.js";
+import { createMockLearnings } from "../../src/mocks/index.js";
 import type {
   LearningSearch,
   LearningSearchResult,
   LearningSearchOptions,
   Learning,
 } from "../../src/core/types.js";
+import { generateText, type LanguageModel } from "ai";
+
+vi.mock("ai", () => ({
+  generateText: vi.fn(),
+}));
 
 /**
  * Mock implementation of LearningSearch for testing
@@ -30,30 +32,54 @@ class MockLearningSearch implements LearningSearch {
   }
 }
 
+/**
+ * Convert createMockLearnings output to Learning objects for test setup
+ */
+function toTestLearnings(
+  mockLearnings: ReturnType<typeof createMockLearnings>
+): Learning[] {
+  return mockLearnings.map((m, i) => ({
+    learningId: `learning-${i}`,
+    title: m.title,
+    trigger: m.trigger,
+    insight: m.insight,
+    whyPoints: m.why_points,
+    faq: m.faq,
+    createdAt: new Date(),
+  }));
+}
+
 describe("IsomorphismEngine", () => {
   let engine: IsomorphismEngineImpl;
   let mockSearch: MockLearningSearch;
-  let mockLLM: MockLLMModel;
+  let model: LanguageModel;
+  const generateTextMock = vi.mocked(generateText);
 
   beforeEach(() => {
     mockSearch = new MockLearningSearch();
-    mockLLM = new MockLLMModel();
-    engine = new IsomorphismEngineImpl(mockSearch, mockLLM);
+    model = {} as LanguageModel;
+    generateTextMock.mockReset();
+    generateTextMock.mockResolvedValue({ text: "Test synthesis" });
+    engine = new IsomorphismEngineImpl(mockSearch, model);
   });
 
   it("should retrieve relevant learnings and generate synthesis", async () => {
     // Setup: Create mock learnings with good similarity scores
-    const mockLearnings = createMockLearnings([
-      {
-        title: "Redux Sagas for Async Flow Control",
-        insight: "Redux Sagas use generator functions to handle async operations",
-        abstraction: {
-          concrete: "Redux Saga generators",
-          pattern: "Channel-based async coordination",
-          principle: "Isolation via message passing",
+    const mockLearnings = toTestLearnings(
+      createMockLearnings([
+        {
+          title: "Redux Sagas for Async Flow Control",
+          trigger: "Needed to handle complex async flows in React",
+          insight:
+            "Redux Sagas use generator functions to handle async operations through channel-based coordination",
+          why_points: [
+            "Generators allow pausing execution",
+            "Channels isolate side effects",
+            "Message passing prevents coupling",
+          ],
         },
-      },
-    ]);
+      ])
+    );
 
     mockSearch.setResults([
       {
@@ -68,9 +94,9 @@ describe("IsomorphismEngine", () => {
     ]);
 
     // Set mock LLM response
-    mockLLM.setResponse(
-      "This is structurally similar to Redux Sagas which you learned about. Go channels are like Redux Sagas because both handle async streams through message passing."
-    );
+    generateTextMock.mockResolvedValueOnce({
+      text: "This is structurally similar to Redux Sagas which you learned about. Go channels are like Redux Sagas because both handle async streams through message passing.",
+    });
 
     // Act
     const result = await engine.explain("How do Go channels work?");
@@ -81,7 +107,7 @@ describe("IsomorphismEngine", () => {
     expect(result.synthesis).toBeTruthy();
     expect(result.synthesis).toContain("Redux Sagas");
     expect(result.confidence).toBeGreaterThan(0);
-    expect(result.patterns).toContain("Channel-based async coordination");
+    expect(result.insights.length).toBeGreaterThan(0);
     expect(result.timestamp).toBeInstanceOf(Date);
   });
 
@@ -96,55 +122,51 @@ describe("IsomorphismEngine", () => {
     expect(result.relatedLearnings.length).toBe(0);
     expect(result.synthesis).toContain("No related learnings found");
     expect(result.confidence).toBe(0);
-    expect(result.patterns.length).toBe(0);
+    expect(result.insights.length).toBe(0);
   });
 
-  it("should extract patterns from learnings", async () => {
-    // Setup: Mock learnings with various patterns
-    const mockLearnings = createMockLearnings([
-      {
-        title: "Learning 1",
-        abstraction: {
-          concrete: "Example 1",
-          pattern: "Pattern A",
-          principle: "Principle X",
+  it("should extract insights from learnings", async () => {
+    // Setup: Mock learnings with various insights
+    const mockLearnings = toTestLearnings(
+      createMockLearnings([
+        {
+          title: "Learning 1",
+          insight: "First insight about patterns. More details here.",
         },
-      },
-      {
-        title: "Learning 2",
-        abstraction: {
-          concrete: "Example 2",
-          pattern: "Pattern B",
-          principle: "Principle Y",
+        {
+          title: "Learning 2",
+          insight: "Second insight about architecture. Additional context.",
         },
-      },
-    ]);
+      ])
+    );
 
     mockSearch.setResults([
       { learning: mockLearnings[0], score: 0.9 },
       { learning: mockLearnings[1], score: 0.8 },
     ]);
 
-    mockLLM.setResponse("Test synthesis");
+    generateTextMock.mockResolvedValueOnce({ text: "Test synthesis" });
 
     // Act
     const result = await engine.explain("Test concept");
 
-    // Assert
-    expect(result.patterns).toContain("Pattern A");
-    expect(result.patterns).toContain("Pattern B");
-    expect(result.patterns).toContain("Principle X");
-    expect(result.patterns).toContain("Principle Y");
-    expect(result.patterns.length).toBe(4);
+    // Assert - insights are extracted from learning insights
+    expect(result.insights.length).toBeGreaterThan(0);
+    expect(result.insights.some((i) => i.includes("First insight"))).toBe(true);
+    expect(result.insights.some((i) => i.includes("Second insight"))).toBe(
+      true
+    );
   });
 
   it("should calculate confidence based on similarity scores", async () => {
     // Setup: Learnings with varying similarity scores
-    const mockLearnings = createMockLearnings([
-      { title: "High similarity" },
-      { title: "Medium similarity" },
-      { title: "Low similarity" },
-    ]);
+    const mockLearnings = toTestLearnings(
+      createMockLearnings([
+        { title: "High similarity" },
+        { title: "Medium similarity" },
+        { title: "Low similarity" },
+      ])
+    );
 
     mockSearch.setResults([
       { learning: mockLearnings[0], score: 0.9 },
@@ -152,7 +174,7 @@ describe("IsomorphismEngine", () => {
       { learning: mockLearnings[2], score: 0.5 },
     ]);
 
-    mockLLM.setResponse("Test synthesis");
+    generateTextMock.mockResolvedValueOnce({ text: "Test synthesis" });
 
     // Act
     const result = await engine.explain("Test concept");
@@ -168,18 +190,20 @@ describe("IsomorphismEngine", () => {
 
   it("should respect learningLimit option", async () => {
     // Setup: Create many mock learnings
-    const mockLearnings = createMockLearnings([
-      { title: "Learning 1" },
-      { title: "Learning 2" },
-      { title: "Learning 3" },
-      { title: "Learning 4" },
-      { title: "Learning 5" },
-      { title: "Learning 6" },
-      { title: "Learning 7" },
-      { title: "Learning 8" },
-      { title: "Learning 9" },
-      { title: "Learning 10" },
-    ]);
+    const mockLearnings = toTestLearnings(
+      createMockLearnings([
+        { title: "Learning 1" },
+        { title: "Learning 2" },
+        { title: "Learning 3" },
+        { title: "Learning 4" },
+        { title: "Learning 5" },
+        { title: "Learning 6" },
+        { title: "Learning 7" },
+        { title: "Learning 8" },
+        { title: "Learning 9" },
+        { title: "Learning 10" },
+      ])
+    );
 
     mockSearch.setResults(
       mockLearnings.map((learning, i) => ({
@@ -188,7 +212,7 @@ describe("IsomorphismEngine", () => {
       }))
     );
 
-    mockLLM.setResponse("Test synthesis");
+    generateTextMock.mockResolvedValueOnce({ text: "Test synthesis" });
 
     // Act
     const result = await engine.explain("Test concept", { learningLimit: 3 });
@@ -199,19 +223,17 @@ describe("IsomorphismEngine", () => {
 
   it("should build context with learning details", async () => {
     // Setup
-    const mockLearnings = createMockLearnings([
-      {
-        title: "Test Learning",
-        context: "Test context",
-        insight: "Test insight",
-        why: "Test why",
-        abstraction: {
-          concrete: "Concrete example",
-          pattern: "Test pattern",
-          principle: "Test principle",
+    const mockLearnings = toTestLearnings(
+      createMockLearnings([
+        {
+          title: "Test Learning",
+          trigger: "Test trigger for the learning",
+          insight: "Test insight content",
+          why_points: ["Why reason 1", "Why reason 2"],
+          faq: [{ question: "Test Q?", answer: "Test A" }],
         },
-      },
-    ]);
+      ])
+    );
 
     mockSearch.setResults([
       {
@@ -220,30 +242,29 @@ describe("IsomorphismEngine", () => {
       },
     ]);
 
-    // We need to capture what context was passed to LLM
-    let capturedContext = "";
-    mockLLM.setGenerateTextHandler((prompt, context) => {
-      capturedContext = context || "";
-      return "Test synthesis";
-    });
+    generateTextMock.mockResolvedValueOnce({ text: "Test synthesis" });
 
     // Act
     await engine.explain("Test concept");
 
     // Assert - verify context includes learning details
-    expect(capturedContext).toContain("Test context");
-    expect(capturedContext).toContain("Test insight");
-    expect(capturedContext).toContain("Test why");
-    expect(capturedContext).toContain("Test pattern");
-    expect(capturedContext).toContain("Test principle");
+    const lastCall = generateTextMock.mock.calls.at(-1)?.[0];
+    expect(lastCall?.prompt).toContain("Test trigger for the learning");
+    expect(lastCall?.prompt).toContain("Test insight content");
+    expect(lastCall?.prompt).toContain("Why reason 1");
+    expect(lastCall?.prompt).toContain("Why reason 2");
+    expect(lastCall?.prompt).toContain("Test Q?");
+    expect(lastCall?.prompt).toContain("Test A");
   });
 
   it("should default to 7 learnings if limit not specified", async () => {
     // Setup: Create 10 learnings
-    const mockLearnings = createMockLearnings(
-      Array(10)
-        .fill(null)
-        .map((_, i) => ({ title: `Learning ${i + 1}` }))
+    const mockLearnings = toTestLearnings(
+      createMockLearnings(
+        Array(10)
+          .fill(null)
+          .map((_, i) => ({ title: `Learning ${i + 1}` }))
+      )
     );
 
     mockSearch.setResults(
@@ -253,7 +274,7 @@ describe("IsomorphismEngine", () => {
       }))
     );
 
-    mockLLM.setResponse("Test synthesis");
+    generateTextMock.mockResolvedValueOnce({ text: "Test synthesis" });
 
     // Act - no learningLimit option provided
     const result = await engine.explain("Test concept");

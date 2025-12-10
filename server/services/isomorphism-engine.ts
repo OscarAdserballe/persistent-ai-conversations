@@ -1,9 +1,5 @@
-import type {
-  LearningSearch,
-  LLMModel,
-  Learning,
-  LearningSearchResult,
-} from "../../src/core/types.js";
+import type { LearningSearch, Learning } from "../../src/core/types.js";
+import { generateText, type LanguageModel } from "ai";
 
 /**
  * Options for explaining a new concept
@@ -42,8 +38,8 @@ export interface IsomorphismResult {
   /** LLM-generated bridge explanation */
   synthesis: string;
 
-  /** Patterns extracted from learnings (for display) */
-  patterns: string[];
+  /** Key insights extracted from learnings (for display) */
+  insights: string[];
 
   /** Confidence score (0-1) based on similarity scores */
   confidence: number;
@@ -80,7 +76,7 @@ export interface IsomorphismEngine {
 export class IsomorphismEngineImpl implements IsomorphismEngine {
   constructor(
     private learningSearch: LearningSearch,
-    private llm: LLMModel
+    private llm: LanguageModel
   ) {}
 
   async explain(
@@ -100,7 +96,7 @@ export class IsomorphismEngineImpl implements IsomorphismEngine {
         relatedLearnings: [],
         synthesis:
           "No related learnings found. This might be entirely new territory!",
-        patterns: [],
+        insights: [],
         confidence: 0,
         timestamp: new Date(),
       };
@@ -114,10 +110,13 @@ export class IsomorphismEngineImpl implements IsomorphismEngine {
 
     // Step 3: Generate synthesis using LLM
     const prompt = options?.customPrompt || this.buildSynthesisPrompt();
-    const synthesis = await this.llm.generateText(prompt, context);
+    const { text: synthesis } = await generateText({
+      model: this.llm,
+      prompt: `${prompt}\n\n${context}`,
+    });
 
-    // Step 4: Extract patterns for display
-    const patterns = this.extractPatterns(learnings);
+    // Step 4: Extract insights for display
+    const insights = this.extractInsights(learnings);
 
     // Step 5: Calculate confidence
     const confidence = this.calculateConfidence(scores);
@@ -126,7 +125,7 @@ export class IsomorphismEngineImpl implements IsomorphismEngine {
       newConcept,
       relatedLearnings: learnings,
       synthesis,
-      patterns,
+      insights,
       confidence,
       timestamp: new Date(),
     };
@@ -141,14 +140,24 @@ export class IsomorphismEngineImpl implements IsomorphismEngine {
 
     learnings.forEach((learning, i) => {
       context += `[Learning ${i + 1}] ${learning.title}\n`;
-      context += `Context: ${learning.context}\n`;
+      context += `Trigger: ${learning.trigger}\n`;
       context += `Insight: ${learning.insight}\n`;
-      context += `Why: ${learning.why}\n`;
 
-      // Include abstraction ladder
-      context += `Pattern: ${learning.abstraction.pattern}\n`;
-      if (learning.abstraction.principle) {
-        context += `Principle: ${learning.abstraction.principle}\n`;
+      // Include why points
+      if (learning.whyPoints && learning.whyPoints.length > 0) {
+        context += `Why:\n`;
+        learning.whyPoints.forEach((point) => {
+          context += `  - ${point}\n`;
+        });
+      }
+
+      // Include FAQ if available
+      if (learning.faq && learning.faq.length > 0) {
+        context += `FAQ:\n`;
+        learning.faq.forEach((item) => {
+          context += `  Q: ${item.question}\n`;
+          context += `  A: ${item.answer}\n`;
+        });
       }
 
       context += `\n`;
@@ -183,17 +192,21 @@ Return your explanation as plain text (not JSON).
 `.trim();
   }
 
-  private extractPatterns(learnings: Learning[]): string[] {
-    const patterns = new Set<string>();
+  private extractInsights(learnings: Learning[]): string[] {
+    const insights = new Set<string>();
 
     for (const learning of learnings) {
-      patterns.add(learning.abstraction.pattern);
-      if (learning.abstraction.principle) {
-        patterns.add(learning.abstraction.principle);
+      // Extract key insight from each learning
+      if (learning.insight) {
+        // Take first sentence or first 100 chars
+        const shortInsight = learning.insight.split(".")[0];
+        if (shortInsight.length > 0) {
+          insights.add(shortInsight);
+        }
       }
     }
 
-    return Array.from(patterns);
+    return Array.from(insights).slice(0, 5); // Limit to 5 insights
   }
 
   private calculateConfidence(scores: number[]): number {

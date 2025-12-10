@@ -1,22 +1,17 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import pLimit from "p-limit";
+import { LangfuseClient } from "@langfuse/client";
 import { loadConfig } from "../config";
 import { createLearningExtractor, createDatabase } from "../factories";
+import { getLangfusePrompt } from "../prompts/get-langfuse-prompt";
 import { getRawDb } from "../db/client";
 import {
-  conversations as conversationsTable,
-  messages as messagesTable,
-  learnings as learningsTable,
-} from "../db/schema";
-import { and, gte, lte, eq } from "drizzle-orm";
-import type {
-  Conversation,
-  Message,
-  Learning,
-  LearningExtractor,
-} from "../core/types";
+  getConversationByUuid,
+  getRandomConversation,
+  getConversationUuidsByDateRange,
+  extractLearnings,
+} from "../api";
 
 const program = new Command();
 
@@ -28,207 +23,106 @@ program
   .option("--all", "Extract from all conversations")
   .option("--start-date <date>", "Start date (YYYY-MM-DD)")
   .option("--end-date <date>", "End date (YYYY-MM-DD)")
-  .option(
-    "-o, --output <path>",
-    "Output diary path",
-    "./data/learning-diary.md"
-  )
-  .action(
-    async (options: {
-      config: string;
-      days?: string;
-      all?: boolean;
-      startDate?: string;
-      endDate?: string;
-      output: string;
-    }) => {
-      try {
-        // Load configuration
-        const config = loadConfig(options.config);
+  .option("--preview", "Preview mode: Run on ONE conversation, no DB writes")
+  .option("--overwrite", "Overwrite existing learnings (re-extract)")
+  .option("--id <uuid>", "Specific conversation UUID (for preview)")
+  .action(async (options) => {
+    const langfuse = new LangfuseClient();
 
-        // Create database connection
-        const db = createDatabase(config.db.path);
+    try {
+      const config = loadConfig(options.config);
+      const db = createDatabase(config.db.path);
 
-        // Create learning extractor
-        const extractor = createLearningExtractor(config, db);
+      // Fetch prompt from Langfuse
+      const promptName = config.prompts?.learningExtraction;
+      if (!promptName) {
+        throw new Error(
+          "Missing config.prompts.learningExtraction (Langfuse prompt name)."
+        );
+      }
+      const promptTemplate = await getLangfusePrompt(langfuse, promptName);
+      const extractor = createLearningExtractor(config, db, promptTemplate);
 
-        // Determine date range
-        let start: Date;
-        let end: Date = new Date();
+      // Determine date range
+      let start: Date;
+      let end: Date = new Date();
 
-        if (options.all) {
-          start = new Date(0); // Beginning of time
-        } else if (options.startDate && options.endDate) {
-          start = new Date(options.startDate);
-          end = new Date(options.endDate);
-        } else {
-          const days = parseInt(options.days || "10", 10);
-          start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-        }
+      if (options.all) {
+        start = new Date(0);
+      } else if (options.startDate && options.endDate) {
+        start = new Date(options.startDate);
+        end = new Date(options.endDate);
+      } else {
+        const days = parseInt(options.days || "10", 10);
+        start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      }
+
+      // PREVIEW MODE
+      if (options.preview) {
+        console.log("🔍 PREVIEW MODE (No Database Writes)\n");
+
+        const conversation = options.id
+          ? getConversationByUuid(db, options.id)
+          : getRandomConversation(db, start, end);
 
         console.log(
-          `Extracting learnings from ${start.toISOString().split("T")[0]} to ${
-            end.toISOString().split("T")[0]
-          }...\n`
+          `Analyzing: "${conversation.title}" (${conversation.uuid})`
         );
+        const learnings = await extractor.extractFromConversation(conversation);
 
-        // Fetch conversations in date range using Drizzle
-        const conversations = db
-          .select()
-          .from(conversationsTable)
-          .where(
-            and(
-              gte(conversationsTable.createdAt, start),
-              lte(conversationsTable.createdAt, end)
-            )
-          )
-          .orderBy(conversationsTable.createdAt)
-          .all();
-
-        const total = conversations.length;
-        console.log(`Processing ${total} conversations...\n`);
-
-        // Create semaphore with limit of 10 concurrent operations
-        const limit = pLimit(10);
-
-        // Helper function to extract with retry logic
-        const extractWithRetry = async (
-          extractor: LearningExtractor,
-          conversation: Conversation,
-          maxRetries = 3
-        ): Promise<Learning[]> => {
-          let lastError: Error | undefined;
-
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-              return await extractor.extractFromConversation(conversation);
-            } catch (error) {
-              lastError = error as Error;
-
-              // Check if it's a rate limit error
-              const isRateLimit =
-                lastError.message.includes("429") ||
-                lastError.message.includes("rate limit");
-
-              if (attempt < maxRetries) {
-                // Exponential backoff: 2^attempt seconds
-                const delayMs = Math.pow(2, attempt) * 1000;
-                console.log(
-                  `  Retry ${attempt}/${maxRetries} after ${delayMs}ms... (${lastError.message.substring(
-                    0,
-                    50
-                  )})`
-                );
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
-              }
-            }
-          }
-
-          // After max retries, throw
-          throw new Error(
-            `Failed after ${maxRetries} attempts: ${lastError!.message}`
-          );
-        };
-
-        // Convert to promises with concurrency control
-        const extractionPromises = conversations.map((conv, i) =>
-          limit(async () => {
-            // Check if already processed using Drizzle
-            const existingLearnings = db
-              .select()
-              .from(learningsTable)
-              .where(eq(learningsTable.conversationUuid, conv.uuid))
-              .all();
-
-            if (existingLearnings.length > 0) {
-              console.log(
-                `[${i + 1}/${total}] ⊘ Skipping "${
-                  conv.name
-                }" (already processed)`
-              );
-              return [];
-            }
-
-            try {
-              // Fetch messages using Drizzle
-              const messagesRaw = db
-                .select()
-                .from(messagesTable)
-                .where(eq(messagesTable.conversationUuid, conv.uuid))
-                .orderBy(messagesTable.conversationIndex)
-                .all();
-
-              const messages: Message[] = messagesRaw.map((msg) => ({
-                uuid: msg.uuid,
-                conversationUuid: msg.conversationUuid,
-                conversationIndex: msg.conversationIndex,
-                sender: msg.sender,
-                text: msg.text,
-                createdAt: msg.createdAt,
-                metadata: {},
-              }));
-
-              const fullConv: Conversation = {
-                uuid: conv.uuid,
-                title: conv.name,
-                platform: conv.platform,
-                messages,
-                createdAt: conv.createdAt,
-                updatedAt: conv.updatedAt,
-                metadata: {},
-              };
-
-              // Extract with retry
-              const learnings = await extractWithRetry(extractor, fullConv);
-
-              console.log(
-                `[${i + 1}/${total}] ✓ Extracted ${
-                  learnings.length
-                } learnings from "${conv.name}"`
-              );
-              return learnings;
-            } catch (error) {
-              console.error(
-                `[${i + 1}/${total}] ✗ Failed "${conv.name}": ${
-                  (error as Error).message
-                }`
-              );
-              return []; // Return empty, don't crash entire process
-            }
-          })
-        );
-
-        // Wait for all to complete
-        const results = await Promise.all(extractionPromises);
-        const allLearnings = results.flat();
-
-        console.log(`\n✓ Extracted ${allLearnings.length} learnings total`);
-
-        if (allLearnings.length > 0) {
-          console.log("\nSample learnings:");
-
-          // Show first 3 learnings
-          for (const learning of allLearnings.slice(0, 3)) {
-            const tagNames = learning.tags.join(", ");
-            console.log(`\n[${tagNames}] ${learning.title}`);
-            console.log(learning.insight);
-          }
-        }
+        console.log("\n=== EXTRACTED LEARNINGS ===\n");
+        console.log(JSON.stringify(learnings, null, 2));
+        console.log(`\nTotal: ${learnings.length}`);
 
         getRawDb(db).close();
         process.exit(0);
-      } catch (error) {
-        console.error(
-          `❌ Learning extraction failed: ${(error as Error).message}`
-        );
-        console.error(`\nTroubleshooting:`);
-        console.error(`  - Check your API keys in config.json`);
-        console.error(`  - Ensure database exists`);
-        console.error(`  - Verify LLM model is available`);
-        console.error(`  - Check rate limits on API`);
-        process.exit(1);
       }
+
+      // BATCH MODE
+      console.log(
+        `Extracting learnings from ${start.toISOString().split("T")[0]} to ${
+          end.toISOString().split("T")[0]
+        }...\n`
+      );
+
+      const uuids = getConversationUuidsByDateRange(db, start, end);
+      console.log(`Processing ${uuids.length} conversations...\n`);
+
+      const learnings = await extractLearnings({
+        db,
+        extractor,
+        conversationUuids: uuids,
+        concurrency: 10,
+        overwrite: options.overwrite,
+        onProgress: (completed, total, title) => {
+          console.log(`[${completed}/${total}] ✓ ${title}`);
+        },
+        onError: (uuid, error) => {
+          console.error(`[ERROR] ${uuid}: ${error.message}`);
+        },
+      });
+
+      console.log(`\n✓ Extracted ${learnings.length} learnings total`);
+
+      if (learnings.length > 0) {
+        console.log("\nSample learnings:");
+        for (const learning of learnings.slice(0, 3)) {
+          console.log(`\n• ${learning.title}`);
+          console.log(`  ${learning.insight.substring(0, 100)}...`);
+        }
+      }
+
+      getRawDb(db).close();
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        `❌ Learning extraction failed: ${(error as Error).message}`
+      );
+      process.exit(1);
+    } finally {
+      await langfuse.flush().catch(() => {});
+      await langfuse.shutdown().catch(() => {});
     }
-  );
+  });
 
 program.parse();

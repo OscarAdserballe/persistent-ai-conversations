@@ -85,6 +85,14 @@ function validateConfig(config: Config): void {
     throw new Error("Missing ingestion configuration");
   }
 
+  if (!config.prompts) {
+    throw new Error("Missing prompts configuration");
+  }
+
+  if (!config.prompts.learningExtraction) {
+    throw new Error("Missing prompts.learningExtraction prompt name");
+  }
+
   // Validate LLM config if present
   if (config.llm) {
     if (!config.llm.provider) {
@@ -141,6 +149,9 @@ export function createDefaultConfig(overrides?: Partial<Config>): Config {
       batchSize: 50,
       progressLogging: true,
       concurrency: 50,
+    },
+    prompts: {
+      learningExtraction: "smaller_schema",
     },
   };
 

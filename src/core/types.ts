@@ -94,43 +94,6 @@ export interface VectorStoreExtended extends VectorStore {
 }
 
 // ============================================================================
-// LLM Model
-// ============================================================================
-
-/**
- * Interface for text generation using LLM APIs.
- * Used for learning extraction (not embeddings).
- * Implementations: GeminiFlash, (future: GPT4oMini, ClaudeHaiku)
- */
-export interface LLMModel {
-  /**
-   * Generate text based on a prompt.
-   * @param prompt - The instruction prompt
-   * @param context - Optional context (e.g., full conversation)
-   * @returns Generated text (typically JSON)
-   */
-  generateText(prompt: string, context?: string): Promise<string>;
-
-  /**
-   * Generate structured output with schema validation.
-   * @param prompt - The instruction prompt
-   * @param context - Optional context (e.g., full conversation)
-   * @param responseSchema - Schema definition in provider-specific format
-   * @returns Parsed object matching the schema
-   */
-  generateStructuredOutput<T>(
-    prompt: string,
-    context: string | undefined,
-    responseSchema: any
-  ): Promise<T>;
-
-  /**
-   * Model identifier (e.g., "gemini-1.5-flash")
-   */
-  readonly model: string;
-}
-
-// ============================================================================
 // Conversation Importer
 // ============================================================================
 
@@ -198,7 +161,7 @@ export interface SearchOptions {
 }
 
 // ============================================================================
-// Learning Extraction (Advanced Schema)
+// Learning Extraction (Simplified Learning Artifact Schema)
 // ============================================================================
 
 /**
@@ -209,93 +172,50 @@ export interface LearningExtractor {
   /**
    * Extract learnings from a single conversation.
    * @param conversation - Full conversation with messages
+   * @param options - Optional metadata for telemetry/experiments
    * @returns Array of extracted learnings (empty if none found)
    */
-  extractFromConversation(conversation: Conversation): Promise<Learning[]>;
+  extractFromConversation(
+    conversation: Conversation,
+    options?: LearningExtractionOptions
+  ): Promise<Learning[]>;
+}
+
+export interface LearningExtractionOptions {
+  experimentId?: string;
+  promptVersion?: string;
+  modelId?: string;
+}
+
+/**
+ * A FAQ item - question/answer pair from the conversation
+ */
+export interface FAQItem {
+  question: string; // The skepticism or clarification asked
+  answer: string; // The resolution
 }
 
 /**
  * A distilled learning extracted from conversations.
- * Uses advanced epistemic introspection framework.
+ * Simplified "Learning Artifact" structure for better recall.
  */
 export interface Learning {
   learningId: string; // Unique learning ID (UUID)
 
   // Core learning capture
-  title: string; // Scannable summary (max 100 chars)
-  context: string; // What triggered this learning
-  insight: string; // What was discovered
-  why: string; // Explanation of WHY this is true
-  implications: string; // When/how to apply this
-  tags: string[]; // Free-form tags for retrieval
+  title: string; // Descriptive title - highly specific for recall
+  trigger: string; // Specific problem/blocker that triggered the question
+  insight: string; // Core technical/philosophical realization
+  whyPoints: string[]; // List of reasons why this is the case
+  faq: FAQItem[]; // Q&A pairs synthesized from conversation
 
-  // Abstraction ladder
-  abstraction: Abstraction;
-
-  // Metacognitive assessment
-  understanding: Understanding;
-
-  // Learning effort
-  effort: Effort;
-
-  // Emotional context
-  resonance: Resonance;
-
-  // Learning classification
-  learningType?: LearningType;
-  sourceCredit?: string; // If insight came from someone else
-
-  // Source tracking (simplified)
+  // Source tracking
   conversationUuid?: string; // Source conversation
 
   // Metadata
   createdAt: Date;
   embedding?: Float32Array; // Vector embedding (populated separately)
 }
-
-/**
- * Abstraction ladder: concrete → pattern → principle
- */
-export interface Abstraction {
-  concrete: string; // Specific instance or example
-  pattern: string; // Generalizable pattern
-  principle?: string; // Universal principle (optional)
-}
-
-/**
- * Metacognitive assessment of understanding depth
- */
-export interface Understanding {
-  confidence: number; // 1-10: How well you understand this
-  canTeachIt: boolean; // Could you explain it to someone else?
-  knownGaps?: string[]; // What you still don't understand
-}
-
-/**
- * Learning effort tracking
- */
-export interface Effort {
-  processingTime: ProcessingTime;
-  cognitiveLoad: CognitiveLoad;
-}
-
-/**
- * Emotional resonance tracking
- */
-export interface Resonance {
-  intensity: number; // 1-10: How much this hit you
-  valence: Valence; // How it felt
-}
-
-// Type definitions
-export type LearningType =
-  | "principle"
-  | "method"
-  | "anti_pattern"
-  | "exception";
-export type ProcessingTime = "5min" | "30min" | "2hr" | "days";
-export type CognitiveLoad = "easy" | "moderate" | "hard" | "breakthrough";
-export type Valence = "positive" | "negative" | "mixed";
 
 /**
  * Semantic search over learnings.
@@ -321,8 +241,6 @@ export interface LearningSearchOptions {
     start: Date;
     end: Date;
   };
-  tags?: string[]; // Filter by tags (OR matching)
-  learningType?: LearningType; // Filter by learning type
 }
 
 export interface LearningSearchResult {
@@ -400,6 +318,7 @@ export interface Config {
   db: DatabaseConfig;
   search: SearchConfig;
   ingestion: IngestionConfig;
+  prompts: PromptsConfig;
   server?: ServerConfig;
 }
 
@@ -439,6 +358,9 @@ export interface IngestionConfig {
   concurrency: number;
 }
 
+export interface PromptsConfig {
+  learningExtraction: string;
+}
 export interface ServerConfig {
   port: number;
   host?: string;

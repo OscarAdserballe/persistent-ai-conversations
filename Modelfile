@@ -1,0 +1,4 @@
+FROM llama3.1:8b
+PARAMETER num_thread 8
+PARAMETER num_gpu 99
+PARAMETER num_batch 512
