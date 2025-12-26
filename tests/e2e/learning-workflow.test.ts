@@ -458,16 +458,16 @@ describe("Learning Workflow E2E", () => {
     // Performance check: should complete in reasonable time (< 5 seconds for 50 extractions with mocks)
     expect(duration).toBeLessThan(5000);
 
-    // Verify data consistency - all learnings have conversation_uuid
+    // Verify data consistency - all learnings have source_id
     const learningsWithSource = getRawDb(drizzleDb)
       .prepare(
-        "SELECT COUNT(*) as count FROM learnings WHERE conversation_uuid IS NOT NULL"
+        "SELECT COUNT(*) as count FROM learnings WHERE source_id IS NOT NULL AND source_type = 'conversation'"
       )
       .get() as any;
     expect(learningsWithSource.count).toBe(50);
   });
 
-  it("should handle learnings with multiple why_points and FAQ items", async () => {
+  it("should handle learnings with multiple blocks", async () => {
     const conv = createConversation(
       "conv-1",
       "Full Stack Development",
@@ -494,31 +494,32 @@ describe("Learning Workflow E2E", () => {
       createMockLearnings([
         {
           title: "Frontend Frameworks",
+          problemSpace: "Choosing a frontend framework",
           insight: "React and Vue are popular frontend frameworks",
-          why_points: ["Easy to learn", "Great ecosystem", "Component-based"],
-          faq: [
-            { question: "Which is faster?", answer: "Both are performant" },
-            {
-              question: "Which has better docs?",
-              answer: "React has more resources",
-            },
+          blocks: [
+            { blockType: "why" as const, question: "Why easy to learn?", answer: "Great documentation" },
+            { blockType: "why" as const, question: "Why great ecosystem?", answer: "Many packages available" },
+            { blockType: "qa" as const, question: "Which is faster?", answer: "Both are performant" },
+            { blockType: "qa" as const, question: "Which has better docs?", answer: "React has more resources" },
           ],
         },
         {
           title: "Backend APIs",
+          problemSpace: "Designing API architecture",
           insight: "REST and GraphQL are common API patterns",
-          why_points: ["Standardized", "Well-documented", "Scalable"],
-          faq: [
-            { question: "When to use GraphQL?", answer: "Complex nested data" },
+          blocks: [
+            { blockType: "why" as const, question: "Why standardized?", answer: "Industry best practices" },
+            { blockType: "contrast" as const, question: "When to use GraphQL vs REST?", answer: "GraphQL for complex nested data" },
           ],
         },
         {
           title: "Database Design",
+          problemSpace: "Selecting database technology",
           insight: "SQL and NoSQL databases have different use cases",
-          why_points: ["ACID compliance", "Flexibility", "Performance"],
-          faq: [
-            { question: "When to use NoSQL?", answer: "Unstructured data" },
-            { question: "When to use SQL?", answer: "Relational data" },
+          blocks: [
+            { blockType: "contrast" as const, question: "When to use NoSQL?", answer: "Unstructured data" },
+            { blockType: "contrast" as const, question: "When to use SQL?", answer: "Relational data" },
+            { blockType: "why" as const, question: "Why ACID?", answer: "Data integrity guarantees" },
           ],
         },
       ])
@@ -532,28 +533,16 @@ describe("Learning Workflow E2E", () => {
       .all() as any[];
     expect(learnings).toHaveLength(3);
 
-    // Verify why_points are stored correctly as JSON
-    const parsedWhyPoints = learnings.map((l: any) => JSON.parse(l.why_points));
-    expect(parsedWhyPoints[0]).toEqual([
-      "Easy to learn",
-      "Great ecosystem",
-      "Component-based",
-    ]);
-    expect(parsedWhyPoints[1]).toEqual([
-      "Standardized",
-      "Well-documented",
-      "Scalable",
-    ]);
-    expect(parsedWhyPoints[2]).toEqual([
-      "ACID compliance",
-      "Flexibility",
-      "Performance",
-    ]);
+    // Verify blocks are stored correctly as JSON
+    const parsedBlocks = learnings.map((l: any) => JSON.parse(l.blocks));
+    expect(parsedBlocks[0]).toHaveLength(4);
+    expect(parsedBlocks[1]).toHaveLength(2);
+    expect(parsedBlocks[2]).toHaveLength(3);
 
-    // Verify FAQ items are stored correctly
-    const parsedFaq = learnings.map((l: any) => JSON.parse(l.faq));
-    expect(parsedFaq[0]).toHaveLength(2);
-    expect(parsedFaq[1]).toHaveLength(1);
-    expect(parsedFaq[2]).toHaveLength(2);
+    // Verify block types
+    expect(parsedBlocks[0].filter((b: any) => b.blockType === "why")).toHaveLength(2);
+    expect(parsedBlocks[0].filter((b: any) => b.blockType === "qa")).toHaveLength(2);
+    expect(parsedBlocks[1].filter((b: any) => b.blockType === "contrast")).toHaveLength(1);
+    expect(parsedBlocks[2].filter((b: any) => b.blockType === "contrast")).toHaveLength(2);
   });
 });

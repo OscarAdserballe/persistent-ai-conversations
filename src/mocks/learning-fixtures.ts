@@ -1,7 +1,7 @@
-import type { LearningJSONType, FAQItemType } from "../schemas/learning";
+import type { LearningJSONType, ContentBlockType } from "../schemas/learning";
 
-type LearningOverride = Partial<Omit<LearningJSONType, "faq">> & {
-  faq?: FAQItemType[];
+type LearningOverride = Partial<Omit<LearningJSONType, "blocks">> & {
+  blocks?: ContentBlockType[];
 };
 
 /**
@@ -13,13 +13,18 @@ export function createMockLearnings(
 ): LearningJSONType[] {
   return overrides.map((override, index) => ({
     title: override.title ?? `Test Learning ${index + 1}`,
-    trigger: override.trigger ?? "Test trigger",
+    problemSpace: override.problemSpace ?? "Test problem space",
     insight: override.insight ?? "Test insight",
-    why_points: override.why_points ?? ["Test reason 1", "Test reason 2"],
-    faq: override.faq ?? [
+    blocks: override.blocks ?? [
       {
+        blockType: "qa" as const,
         question: "Test question?",
         answer: "Test answer.",
+      },
+      {
+        blockType: "why" as const,
+        question: "Why is this true?",
+        answer: "Because of reasons.",
       },
     ],
   }));

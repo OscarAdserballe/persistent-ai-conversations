@@ -1,21 +1,22 @@
 import {
   EmbeddingModel,
-  LearningExtractor,
+  TopicLearningExtractor,
   Learning,
   ContentBlock,
+  Topic,
   type LearningExtractionOptions,
 } from "../core/types";
-import type { Conversation } from "../core/types";
 import { LearningsArraySchema } from "../schemas/learning";
 import { DrizzleDB } from "../db/client";
 import { learnings as learningsTable, type LearningInsert } from "../db/schema";
 import { generateObject, LanguageModel } from "ai";
+import { randomUUID } from "crypto";
 
 /**
- * Service for extracting learnings from conversations.
- * Uses LLM to analyze full conversation context.
+ * Service for extracting learnings from topics (which come from PDFs).
+ * Uses LLM to analyze topic content and generate flashcard-ready learnings.
  */
-export class LearningExtractorImpl implements LearningExtractor {
+export class TopicLearningExtractorImpl implements TopicLearningExtractor {
   constructor(
     private model: LanguageModel,
     private embedder: EmbeddingModel,
@@ -23,11 +24,11 @@ export class LearningExtractorImpl implements LearningExtractor {
     private promptTemplate: string
   ) {}
 
-  async extractFromConversation(
-    conversation: Conversation,
+  async extractFromTopic(
+    topic: Topic,
     options?: LearningExtractionOptions
   ): Promise<Learning[]> {
-    const context = this.buildConversationContext(conversation);
+    const context = this.buildTopicContext(topic);
     const prompt = this.promptTemplate;
 
     const { object } = await generateObject({
@@ -36,16 +37,16 @@ export class LearningExtractorImpl implements LearningExtractor {
       prompt: `${prompt}\n\n${context}`,
       experimental_telemetry: {
         isEnabled: true,
-        functionId: "extract-learnings",
+        functionId: "extract-learnings-from-topic",
         metadata: {
-          conversationUuid: conversation.uuid,
-          title: conversation.title,
+          topicId: topic.topicId,
+          title: topic.title,
+          pdfId: topic.pdfId,
           ...(options?.experimentId && { experimentId: options.experimentId }),
           ...(options?.promptVersion && {
             promptVersion: options?.promptVersion,
           }),
-          context,
-          prompt,
+          ...(options?.modelId && { modelId: options?.modelId }),
         },
       },
     });
@@ -54,7 +55,7 @@ export class LearningExtractorImpl implements LearningExtractor {
       return [];
     }
 
-    // Build embedding text from new schema fields
+    // Build embedding text from learning fields
     const embeddingTexts = object.map((l) => {
       const blocksText = l.blocks
         .map((b) => `Q: ${b.question} A: ${b.answer}`)
@@ -69,7 +70,7 @@ export class LearningExtractorImpl implements LearningExtractor {
     for (let i = 0; i < object.length; i++) {
       const learning = object[i];
       const embedding = embeddings[i];
-      const learningId = this.generateUUID();
+      const learningId = randomUUID();
 
       const insertData: LearningInsert = {
         learningId,
@@ -77,9 +78,9 @@ export class LearningExtractorImpl implements LearningExtractor {
         problemSpace: learning.problemSpace,
         insight: learning.insight,
         blocks: learning.blocks as ContentBlock[],
-        sourceType: "conversation",
-        sourceId: conversation.uuid,
-        embedding: this.serializeEmbedding(embedding),
+        sourceType: "topic",
+        sourceId: topic.topicId,
+        embedding: Buffer.from(embedding.buffer),
         createdAt: now,
       };
 
@@ -91,8 +92,8 @@ export class LearningExtractorImpl implements LearningExtractor {
         problemSpace: learning.problemSpace,
         insight: learning.insight,
         blocks: learning.blocks as ContentBlock[],
-        sourceType: "conversation",
-        sourceId: conversation.uuid,
+        sourceType: "topic",
+        sourceId: topic.topicId,
         createdAt: now,
         embedding,
       });
@@ -101,26 +102,26 @@ export class LearningExtractorImpl implements LearningExtractor {
     return results;
   }
 
-  private buildConversationContext(conversation: Conversation): string {
-    const messages = conversation.messages
-      .map((m) => `[${m.sender.toUpperCase()}]: ${m.text}`)
-      .join("\n\n");
+  private buildTopicContext(topic: Topic): string {
+    const keyPointsList = topic.keyPoints
+      .map((p, i) => `  ${i + 1}. ${p}`)
+      .join("\n");
 
-    return `Conversation: "${
-      conversation.title
-    }"\nDate: ${conversation.createdAt.toISOString()}\n\n${messages}`;
-  }
+    let context = `TOPIC: ${topic.title}
 
-  private serializeEmbedding(embedding: Float32Array): Buffer {
-    return Buffer.from(embedding.buffer);
-  }
+SUMMARY:
+${topic.summary}
 
-  private generateUUID(): string {
-    // Generate RFC4122 v4 UUID
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+KEY POINTS:
+${keyPointsList}`;
+
+    if (topic.sourcePassages && topic.sourcePassages.length > 0) {
+      const passages = topic.sourcePassages
+        .map((p, i) => `  [${i + 1}] "${p}"`)
+        .join("\n");
+      context += `\n\nSOURCE PASSAGES:\n${passages}`;
+    }
+
+    return context;
   }
 }

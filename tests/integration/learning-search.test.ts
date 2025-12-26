@@ -45,22 +45,20 @@ describe("Learning Search Pipeline", () => {
     }
   });
 
-  // Helper to insert a learning with simplified schema
+  // Helper to insert a learning with new block-based schema
   async function insertLearning(
     id: string,
     title: string,
-    trigger: string,
+    problemSpace: string,
     insight: string,
-    whyPoints: string[],
-    faq: { question: string; answer: string }[],
-    conversationUuid: string,
+    blocks: { blockType: string; question: string; answer: string }[],
+    sourceId: string,
     createdAt: Date | string
   ) {
     const embedding = await embedder.embed(
-      `${title} ${trigger} ${insight} ${whyPoints.join(" ")}`
+      `${title} ${problemSpace} ${insight}`
     );
-    const whyPointsJson = JSON.stringify(whyPoints);
-    const faqJson = JSON.stringify(faq);
+    const blocksJson = JSON.stringify(blocks);
     const createdAtMs =
       typeof createdAt === "string"
         ? new Date(createdAt).getTime()
@@ -70,19 +68,19 @@ describe("Learning Search Pipeline", () => {
       .prepare(
         `
       INSERT INTO learnings (
-        learning_id, title, trigger, insight, why_points, faq,
-        conversation_uuid, embedding, created_at
+        learning_id, title, problem_space, insight, blocks,
+        source_type, source_id, embedding, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
       )
       .run(
         id,
         title,
-        trigger,
+        problemSpace,
         insight,
-        whyPointsJson,
-        faqJson,
-        conversationUuid,
+        blocksJson,
+        "conversation",
+        sourceId,
         Buffer.from(embedding.buffer),
         createdAtMs
       );
@@ -101,14 +99,16 @@ describe("Learning Search Pipeline", () => {
       )
       .run();
 
-    // Insert learning with simplified schema
+    // Insert learning with new block-based schema
     await insertLearning(
       "learn-1",
       "TypeScript Intro",
       "Needed to understand TypeScript",
       "TypeScript adds static typing to JavaScript",
-      ["Type safety catches bugs early", "Better IDE support"],
-      [{ question: "Why TypeScript?", answer: "For type safety" }],
+      [
+        { blockType: "qa", question: "Why TypeScript?", answer: "For type safety" },
+        { blockType: "why", question: "Why type safety?", answer: "Catches bugs early" },
+      ],
       "conv-1",
       now
     );
@@ -124,10 +124,11 @@ describe("Learning Search Pipeline", () => {
     expect(result.learning.title).toBe("TypeScript Intro");
     expect(result.learning.insight).toContain("TypeScript");
 
-    // Verify simplified schema fields
-    expect(result.learning.trigger).toBe("Needed to understand TypeScript");
-    expect(result.learning.whyPoints.length).toBe(2);
-    expect(result.learning.faq.length).toBe(1);
+    // Verify new schema fields
+    expect(result.learning.problemSpace).toBe("Needed to understand TypeScript");
+    expect(result.learning.blocks.length).toBe(2);
+    expect(result.learning.sourceType).toBe("conversation");
+    expect(result.learning.sourceId).toBe("conv-1");
 
     // Verify source
     expect(result.sourceConversation).toBeDefined();
@@ -157,10 +158,9 @@ describe("Learning Search Pipeline", () => {
     await insertLearning(
       "learn-old",
       "Old Learning",
-      "Old trigger",
+      "Old problem",
       "test query for date filtering",
-      ["reason"],
-      [],
+      [{ blockType: "qa", question: "Q?", answer: "A" }],
       "conv-1",
       oldDate
     );
@@ -169,10 +169,9 @@ describe("Learning Search Pipeline", () => {
     await insertLearning(
       "learn-recent",
       "Recent Learning",
-      "Recent trigger",
+      "Recent problem",
       "test query for date filtering",
-      ["reason"],
-      [],
+      [{ blockType: "qa", question: "Q?", answer: "A" }],
       "conv-1",
       recentDate
     );
@@ -219,10 +218,9 @@ describe("Learning Search Pipeline", () => {
       await insertLearning(
         learning.id,
         learning.insight,
-        "trigger",
+        "problem",
         learning.insight,
-        ["reason"],
-        [],
+        [{ blockType: "qa", question: "Q?", answer: "A" }],
         "conv-1",
         now
       );
@@ -264,10 +262,9 @@ describe("Learning Search Pipeline", () => {
       await insertLearning(
         `learn-${i}`,
         `Learning ${i} about programming`,
-        "trigger",
+        "problem",
         `Learning ${i} about programming`,
-        ["reason"],
-        [],
+        [{ blockType: "qa", question: "Q?", answer: "A" }],
         "conv-1",
         now
       );
@@ -296,10 +293,9 @@ describe("Learning Search Pipeline", () => {
     await insertLearning(
       "learn-1",
       "TypeScript",
-      "trigger",
+      "problem",
       "TypeScript content",
-      ["reason"],
-      [],
+      [{ blockType: "qa", question: "Q?", answer: "A" }],
       "conv-1",
       now
     );
@@ -316,7 +312,7 @@ describe("Learning Search Pipeline", () => {
     expect(source?.createdAt).toBeInstanceOf(Date);
   });
 
-  it("should handle learnings with empty arrays", async () => {
+  it("should handle learnings with empty blocks", async () => {
     const now = new Date().toISOString();
 
     // Insert conversation
@@ -329,13 +325,12 @@ describe("Learning Search Pipeline", () => {
       )
       .run();
 
-    // Insert learning with empty arrays
+    // Insert learning with empty blocks
     await insertLearning(
       "learn-1",
       "Uncategorized",
-      "trigger",
+      "problem",
       "uncategorized content",
-      [],
       [],
       "conv-1",
       now
@@ -345,8 +340,7 @@ describe("Learning Search Pipeline", () => {
     const results = await search.search("content", { limit: 10 });
 
     expect(results.length).toBeGreaterThan(0);
-    expect(results[0].learning.whyPoints).toEqual([]);
-    expect(results[0].learning.faq).toEqual([]);
+    expect(results[0].learning.blocks).toEqual([]);
   });
 
   it("should handle large result sets efficiently", async () => {
@@ -367,10 +361,9 @@ describe("Learning Search Pipeline", () => {
       await insertLearning(
         `learn-${i}`,
         `Learning ${i} about programming and software development`,
-        "trigger",
+        "problem",
         `Learning ${i} about programming and software development`,
-        ["reason"],
-        [],
+        [{ blockType: "qa", question: "Q?", answer: "A" }],
         "conv-1",
         now
       );

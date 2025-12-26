@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { loadConfig } from "../config";
 import { createLearningSearch, createDatabase } from "../factories";
 import { getRawDb } from "../db/client";
-import { Learning } from "../core/types";
+import { Learning, LearningSearchResult } from "../core/types";
 
 const program = new Command();
 
@@ -39,18 +39,18 @@ program
         const learningSearch = createLearningSearch(config, db);
 
         // Build search options
-        const searchOptions: any = {
+        const searchOptions: {
+          limit: number;
+          dateRange?: { start: Date; end: Date };
+        } = {
           limit: parseInt(options.limit, 10),
         };
 
+        // Only set dateRange if both start and end can be determined
         if (options.after || options.before) {
-          searchOptions.dateRange = {};
-          if (options.after) {
-            searchOptions.dateRange.start = new Date(options.after);
-          }
-          if (options.before) {
-            searchOptions.dateRange.end = new Date(options.before);
-          }
+          const start = options.after ? new Date(options.after) : new Date(0);
+          const end = options.before ? new Date(options.before) : new Date();
+          searchOptions.dateRange = { start, end };
         }
 
         console.log(`Searching learnings for: "${query}"\n`);
@@ -69,11 +69,7 @@ program
         // Display results (summary or detailed view)
         for (const result of results) {
           if (options.detailed) {
-            displayDetailedLearning(
-              result.learning,
-              result.score,
-              result.sourceConversation
-            );
+            displayDetailedLearning(result);
           } else {
             displaySummaryLearning(result.learning, result.score);
           }
@@ -82,7 +78,7 @@ program
         getRawDb(db).close();
         process.exit(0);
       } catch (error) {
-        console.error(`❌ Learning search failed: ${(error as Error).message}`);
+        console.error(`Learning search failed: ${(error as Error).message}`);
         console.error(`\nTroubleshooting:`);
         console.error(`  - Check your API key in config.json`);
         console.error(`  - Ensure database exists`);
@@ -97,21 +93,19 @@ program.parse();
 // Display functions
 
 function displaySummaryLearning(learning: Learning, score: number): void {
-  console.log(`• ${learning.title}`);
-  console.log(`  → ${learning.insight.substring(0, 100)}...`);
+  console.log(`* ${learning.title}`);
+  console.log(`  -> ${learning.insight.substring(0, 100)}...`);
   console.log(
     `  Score: ${(score * 100).toFixed(1)}% | Date: ${
       learning.createdAt.toISOString().split("T")[0]
-    }`
+    } | Source: ${learning.sourceType}`
   );
   console.log();
 }
 
-function displayDetailedLearning(
-  learning: Learning,
-  score: number,
-  sourceConv?: { uuid: string; title: string; createdAt: Date }
-): void {
+function displayDetailedLearning(result: LearningSearchResult): void {
+  const { learning, score, sourceConversation, sourceTopic } = result;
+
   console.log("=".repeat(80));
   console.log(`${learning.title}`);
   console.log(
@@ -122,36 +116,35 @@ function displayDetailedLearning(
   console.log("=".repeat(80));
   console.log();
 
-  console.log(`Trigger: ${learning.trigger}`);
+  console.log(`Problem Space: ${learning.problemSpace}`);
   console.log();
 
   console.log(`Insight: ${learning.insight}`);
   console.log();
 
-  if (learning.whyPoints.length > 0) {
-    console.log("Why:");
-    for (const point of learning.whyPoints) {
-      console.log(`  • ${point}`);
-    }
-    console.log();
-  }
-
-  if (learning.faq.length > 0) {
-    console.log("FAQ:");
-    for (const item of learning.faq) {
-      console.log(`  Q: ${item.question}`);
-      console.log(`  A: ${item.answer}`);
+  if (learning.blocks.length > 0) {
+    console.log("Blocks:");
+    for (const block of learning.blocks) {
+      console.log(`  [${block.blockType}] Q: ${block.question}`);
+      console.log(`           A: ${block.answer}`);
       console.log();
     }
   }
 
-  if (sourceConv) {
-    console.log("Source:");
+  // Display source
+  console.log("Source:");
+  if (sourceConversation) {
     console.log(
-      `  "${sourceConv.title}" (${
-        sourceConv.createdAt.toISOString().split("T")[0]
+      `  Conversation: "${sourceConversation.title}" (${
+        sourceConversation.createdAt.toISOString().split("T")[0]
       })`
     );
-    console.log();
+  } else if (sourceTopic) {
+    console.log(
+      `  Topic: "${sourceTopic.title}" from PDF "${sourceTopic.pdfTitle ?? sourceTopic.pdfId}"`
+    );
+  } else {
+    console.log(`  ${learning.sourceType}: ${learning.sourceId}`);
   }
+  console.log();
 }

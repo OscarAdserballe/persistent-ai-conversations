@@ -2,16 +2,17 @@
  * Eval types for experiment running
  */
 
+import type { ContentBlock } from "../core/types";
+
 /**
  * What the LLM returns (without embedding for JSON serialization in Langfuse)
  */
 export interface LearningOutput {
   learningId: string;
   title: string;
-  trigger: string;
+  problemSpace: string;
   insight: string;
-  whyPoints: string[];
-  faq: Array<{ question: string; answer: string }>;
+  blocks: ContentBlock[];
 }
 
 /**
@@ -62,5 +63,3 @@ export interface DatasetInput {
   title?: string;
   context?: string;
 }
-
-

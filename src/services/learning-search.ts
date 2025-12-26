@@ -5,9 +5,10 @@ import {
   LearningSearchOptions,
   LearningSearchResult,
   Learning,
+  ContentBlock,
 } from "../core/types";
 import { DrizzleDB } from "../db/client";
-import { learnings as learningsTable, conversations } from "../db/schema";
+import { learnings as learningsTable, conversations, topics, pdfDocuments } from "../db/schema";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 
 /**
@@ -60,48 +61,68 @@ export class LearningSearchImpl implements LearningSearch {
       );
     }
 
-    // Type-safe query with join - Drizzle handles JSON parsing automatically!
+    // Query learnings
     const rows = await this.db
-      .select({
-        learning: learningsTable,
-        conversation: conversations,
-      })
+      .select()
       .from(learningsTable)
-      .leftJoin(
-        conversations,
-        eq(learningsTable.conversationUuid, conversations.uuid)
-      )
       .where(and(...conditions));
 
-    // 4. Build results
+    // 4. Build results with source enrichment
     const results: LearningSearchResult[] = [];
 
-    for (const row of rows) {
-      const { learning: l, conversation: c } = row;
-
-      // Drizzle already parsed JSON! Just map to TypeScript types
+    for (const l of rows) {
+      // Map to Learning type
       const learning: Learning = {
         learningId: l.learningId,
         title: l.title,
-        trigger: l.trigger,
+        problemSpace: l.problemSpace,
         insight: l.insight,
-        whyPoints: l.whyPoints,
-        faq: l.faq,
-        conversationUuid: l.conversationUuid ?? undefined,
+        blocks: l.blocks as ContentBlock[],
+        sourceType: l.sourceType,
+        sourceId: l.sourceId,
         createdAt: l.createdAt,
       };
 
       const result: LearningSearchResult = {
         learning,
         score: scoreMap.get(l.learningId) || 0,
-        sourceConversation: c
-          ? {
-              uuid: c.uuid,
-              title: c.name,
-              createdAt: c.createdAt,
-            }
-          : undefined,
       };
+
+      // Enrich with source metadata based on sourceType
+      if (l.sourceType === "conversation") {
+        const conv = await this.db
+          .select()
+          .from(conversations)
+          .where(eq(conversations.uuid, l.sourceId))
+          .get();
+
+        if (conv) {
+          result.sourceConversation = {
+            uuid: conv.uuid,
+            title: conv.name,
+            createdAt: conv.createdAt,
+          };
+        }
+      } else if (l.sourceType === "topic") {
+        const topic = await this.db
+          .select({
+            topic: topics,
+            pdf: pdfDocuments,
+          })
+          .from(topics)
+          .leftJoin(pdfDocuments, eq(topics.pdfId, pdfDocuments.id))
+          .where(eq(topics.topicId, l.sourceId))
+          .get();
+
+        if (topic?.topic) {
+          result.sourceTopic = {
+            topicId: topic.topic.topicId,
+            title: topic.topic.title,
+            pdfId: topic.topic.pdfId,
+            pdfTitle: topic.pdf?.title ?? topic.pdf?.filename,
+          };
+        }
+      }
 
       results.push(result);
     }
