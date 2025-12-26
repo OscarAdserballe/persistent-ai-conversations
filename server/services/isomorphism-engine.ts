@@ -140,23 +140,15 @@ export class IsomorphismEngineImpl implements IsomorphismEngine {
 
     learnings.forEach((learning, i) => {
       context += `[Learning ${i + 1}] ${learning.title}\n`;
-      context += `Trigger: ${learning.trigger}\n`;
+      context += `Problem Space: ${learning.problemSpace}\n`;
       context += `Insight: ${learning.insight}\n`;
 
-      // Include why points
-      if (learning.whyPoints && learning.whyPoints.length > 0) {
-        context += `Why:\n`;
-        learning.whyPoints.forEach((point) => {
-          context += `  - ${point}\n`;
-        });
-      }
-
-      // Include FAQ if available
-      if (learning.faq && learning.faq.length > 0) {
-        context += `FAQ:\n`;
-        learning.faq.forEach((item) => {
-          context += `  Q: ${item.question}\n`;
-          context += `  A: ${item.answer}\n`;
+      // Include blocks (Q&A pairs)
+      if (learning.blocks && learning.blocks.length > 0) {
+        context += `Key Points:\n`;
+        learning.blocks.forEach((block) => {
+          context += `  [${block.blockType}] Q: ${block.question}\n`;
+          context += `           A: ${block.answer}\n`;
         });
       }
 

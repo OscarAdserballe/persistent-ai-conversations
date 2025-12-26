@@ -29,63 +29,45 @@ describe("LearningSearchImpl", () => {
       )
       .run();
 
-    // Helper to create learning data with simplified schema
+    // Helper to create learning data with new block-based schema
     const createLearningData = (
       id: string,
       title: string,
-      conversationUuid: string,
+      sourceId: string,
       createdAt: string
     ) => {
-      const whyPoints = JSON.stringify([
-        `Reason 1 for ${title}`,
-        `Reason 2 for ${title}`,
-      ]);
-      const faq = JSON.stringify([
-        { question: `Question about ${title}?`, answer: `Answer for ${title}` },
+      const blocks = JSON.stringify([
+        { blockType: "qa", question: `Question about ${title}?`, answer: `Answer for ${title}` },
+        { blockType: "why", question: `Why ${title}?`, answer: `Because of ${title}` },
       ]);
       const embedding = Buffer.from(new Float32Array(768).fill(0.5).buffer);
 
       return {
         id,
         title,
-        trigger: `Trigger for ${title}`,
+        problemSpace: `Problem space for ${title}`,
         insight: `Insight for ${title}`,
-        whyPoints,
-        faq,
-        conversationUuid,
+        blocks,
+        sourceType: "conversation",
+        sourceId,
         embedding,
         createdAt,
       };
     };
 
-    // Insert test learnings with simplified schema
+    // Insert test learnings with new schema
     const learnings = [
-      createLearningData(
-        "learn-1",
-        "TypeScript Basics",
-        "conv-1",
-        "2025-01-01"
-      ),
+      createLearningData("learn-1", "TypeScript Basics", "conv-1", "2025-01-01"),
       createLearningData("learn-2", "React Hooks", "conv-2", "2025-01-02"),
-      createLearningData(
-        "learn-3",
-        "TypeScript Generics",
-        "conv-1",
-        "2025-01-03"
-      ),
+      createLearningData("learn-3", "TypeScript Generics", "conv-1", "2025-01-03"),
       createLearningData("learn-4", "React Context", "conv-2", "2025-01-04"),
-      createLearningData(
-        "learn-5",
-        "TypeScript Interfaces",
-        "conv-1",
-        "2025-01-05"
-      ),
+      createLearningData("learn-5", "TypeScript Interfaces", "conv-1", "2025-01-05"),
     ];
 
     const insertStmt = getRawDb(drizzleDb).prepare(`
       INSERT INTO learnings (
-        learning_id, title, trigger, insight, why_points, faq,
-        conversation_uuid, embedding, created_at
+        learning_id, title, problem_space, insight, blocks,
+        source_type, source_id, embedding, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
@@ -93,11 +75,11 @@ describe("LearningSearchImpl", () => {
       insertStmt.run(
         l.id,
         l.title,
-        l.trigger,
+        l.problemSpace,
         l.insight,
-        l.whyPoints,
-        l.faq,
-        l.conversationUuid,
+        l.blocks,
+        l.sourceType,
+        l.sourceId,
         l.embedding,
         l.createdAt
       );
@@ -151,12 +133,12 @@ describe("LearningSearchImpl", () => {
       expect(result.learning).toBeDefined();
       expect(result.learning.learningId).toBeDefined();
       expect(result.learning.title).toBeDefined();
-      expect(result.learning.trigger).toBeDefined();
+      expect(result.learning.problemSpace).toBeDefined();
       expect(result.learning.insight).toBeDefined();
-      expect(result.learning.whyPoints).toBeDefined();
-      expect(Array.isArray(result.learning.whyPoints)).toBe(true);
-      expect(result.learning.faq).toBeDefined();
-      expect(Array.isArray(result.learning.faq)).toBe(true);
+      expect(result.learning.blocks).toBeDefined();
+      expect(Array.isArray(result.learning.blocks)).toBe(true);
+      expect(result.learning.sourceType).toBeDefined();
+      expect(result.learning.sourceId).toBeDefined();
       expect(result.score).toBeDefined();
       expect(typeof result.score).toBe("number");
       expect(result.sourceConversation).toBeDefined();
@@ -213,7 +195,7 @@ describe("LearningSearchImpl", () => {
 
       // Find a result from conv-1
       const conv1Result = results.find(
-        (r) => r.learning.conversationUuid === "conv-1"
+        (r) => r.learning.sourceId === "conv-1"
       );
       expect(conv1Result).toBeDefined();
       expect(conv1Result?.sourceConversation?.uuid).toBe("conv-1");
@@ -226,7 +208,7 @@ describe("LearningSearchImpl", () => {
       const results = await search.search("TypeScript");
 
       for (const result of results) {
-        if (result.learning.conversationUuid) {
+        if (result.learning.sourceType === "conversation") {
           expect(result.sourceConversation).toBeDefined();
         }
       }
@@ -293,10 +275,11 @@ describe("LearningSearchImpl", () => {
 
       expect(learning.learningId).toBeDefined();
       expect(learning.title).toBeDefined();
-      expect(learning.trigger).toBeDefined();
+      expect(learning.problemSpace).toBeDefined();
       expect(learning.insight).toBeDefined();
-      expect(learning.whyPoints).toBeDefined();
-      expect(learning.faq).toBeDefined();
+      expect(learning.blocks).toBeDefined();
+      expect(learning.sourceType).toBeDefined();
+      expect(learning.sourceId).toBeDefined();
       expect(learning.createdAt).toBeDefined();
     });
 
@@ -361,24 +344,23 @@ describe("LearningSearchImpl", () => {
     it("should handle learning with very long title", async () => {
       // Insert learning with very long title
       const longTitle = "A".repeat(1000);
-      const whyPoints = JSON.stringify(["reason"]);
-      const faq = JSON.stringify([{ question: "q", answer: "a" }]);
+      const blocks = JSON.stringify([{ blockType: "qa", question: "q", answer: "a" }]);
       const embedding = Buffer.from(new Float32Array(768).fill(0.5).buffer);
 
       getRawDb(drizzleDb)
         .prepare(
           `
-        INSERT INTO learnings (learning_id, title, trigger, insight, why_points, faq, conversation_uuid, embedding, created_at)
+        INSERT INTO learnings (learning_id, title, problem_space, insight, blocks, source_type, source_id, embedding, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
         )
         .run(
           "learn-long",
           longTitle,
-          "trigger",
+          "problem",
           "insight",
-          whyPoints,
-          faq,
+          blocks,
+          "conversation",
           "conv-1",
           embedding,
           "2025-01-01"

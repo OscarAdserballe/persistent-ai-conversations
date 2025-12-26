@@ -41,10 +41,11 @@ function toTestLearnings(
   return mockLearnings.map((m, i) => ({
     learningId: `learning-${i}`,
     title: m.title,
-    trigger: m.trigger,
+    problemSpace: m.problemSpace,
     insight: m.insight,
-    whyPoints: m.why_points,
-    faq: m.faq,
+    blocks: m.blocks,
+    sourceType: "conversation" as const,
+    sourceId: `conv-${i}`,
     createdAt: new Date(),
   }));
 }
@@ -69,13 +70,13 @@ describe("IsomorphismEngine", () => {
       createMockLearnings([
         {
           title: "Redux Sagas for Async Flow Control",
-          trigger: "Needed to handle complex async flows in React",
+          problemSpace: "Needed to handle complex async flows in React",
           insight:
             "Redux Sagas use generator functions to handle async operations through channel-based coordination",
-          why_points: [
-            "Generators allow pausing execution",
-            "Channels isolate side effects",
-            "Message passing prevents coupling",
+          blocks: [
+            { blockType: "why" as const, question: "Why use generators?", answer: "Generators allow pausing execution" },
+            { blockType: "why" as const, question: "Why use channels?", answer: "Channels isolate side effects" },
+            { blockType: "why" as const, question: "Why message passing?", answer: "Message passing prevents coupling" },
           ],
         },
       ])
@@ -227,10 +228,13 @@ describe("IsomorphismEngine", () => {
       createMockLearnings([
         {
           title: "Test Learning",
-          trigger: "Test trigger for the learning",
+          problemSpace: "Test problem space for the learning",
           insight: "Test insight content",
-          why_points: ["Why reason 1", "Why reason 2"],
-          faq: [{ question: "Test Q?", answer: "Test A" }],
+          blocks: [
+            { blockType: "why" as const, question: "Why reason 1?", answer: "Because of reason 1" },
+            { blockType: "why" as const, question: "Why reason 2?", answer: "Because of reason 2" },
+            { blockType: "qa" as const, question: "Test Q?", answer: "Test A" },
+          ],
         },
       ])
     );
@@ -249,10 +253,10 @@ describe("IsomorphismEngine", () => {
 
     // Assert - verify context includes learning details
     const lastCall = generateTextMock.mock.calls.at(-1)?.[0];
-    expect(lastCall?.prompt).toContain("Test trigger for the learning");
+    expect(lastCall?.prompt).toContain("Test problem space for the learning");
     expect(lastCall?.prompt).toContain("Test insight content");
-    expect(lastCall?.prompt).toContain("Why reason 1");
-    expect(lastCall?.prompt).toContain("Why reason 2");
+    expect(lastCall?.prompt).toContain("Why reason 1?");
+    expect(lastCall?.prompt).toContain("Why reason 2?");
     expect(lastCall?.prompt).toContain("Test Q?");
     expect(lastCall?.prompt).toContain("Test A");
   });

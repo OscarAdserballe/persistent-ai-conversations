@@ -85,3 +85,83 @@ export function estimateChunkCount(textLength: number, maxChars: number = 3000):
   }
   return Math.ceil(textLength / maxChars)
 }
+
+// =============================================================================
+// PDF Chunking
+// =============================================================================
+
+import type { PDFPage } from "../core/types"
+
+export interface PDFChunk extends TextChunk {
+  pageNumber?: number
+}
+
+/**
+ * Chunk PDF text with page boundary awareness.
+ * Attempts to keep page boundaries when possible, but splits large pages.
+ *
+ * @param pages - Array of PDF pages with text
+ * @param maxChars - Maximum characters per chunk (default: 3000)
+ * @returns Array of chunks with page number metadata
+ */
+export function chunkPDFText(pages: PDFPage[], maxChars: number = 3000): PDFChunk[] {
+  const chunks: PDFChunk[] = []
+  let currentChunk = ""
+  let currentPageStart = 1
+  let chunkIndex = 0
+
+  for (const page of pages) {
+    // If adding this page would exceed max and we have content, finalize current chunk
+    if (currentChunk.length + page.text.length > maxChars && currentChunk.length > 0) {
+      chunks.push({
+        text: currentChunk.trim(),
+        charCount: currentChunk.trim().length,
+        index: chunkIndex++,
+        pageNumber: currentPageStart,
+      })
+      currentChunk = ""
+      currentPageStart = page.pageNumber
+    }
+
+    // If single page exceeds max, split it using existing chunkText logic
+    if (page.text.length > maxChars) {
+      // First, push any accumulated content
+      if (currentChunk.length > 0) {
+        chunks.push({
+          text: currentChunk.trim(),
+          charCount: currentChunk.trim().length,
+          index: chunkIndex++,
+          pageNumber: currentPageStart,
+        })
+        currentChunk = ""
+      }
+
+      // Split the large page
+      const pageChunks = chunkText(page.text, maxChars)
+      for (const pc of pageChunks) {
+        chunks.push({
+          text: pc.text,
+          charCount: pc.charCount,
+          index: chunkIndex++,
+          pageNumber: page.pageNumber,
+        })
+      }
+      currentPageStart = page.pageNumber + 1
+    } else {
+      // Add page to current chunk with separator
+      currentChunk += (currentChunk ? "\n\n" : "") + page.text
+    }
+  }
+
+  // Don't forget remaining content
+  if (currentChunk.trim().length > 0) {
+    chunks.push({
+      text: currentChunk.trim(),
+      charCount: currentChunk.trim().length,
+      index: chunkIndex,
+      pageNumber: currentPageStart,
+    })
+  }
+
+  return chunks
+}

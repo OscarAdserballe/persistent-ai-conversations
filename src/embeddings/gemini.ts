@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import pLimit from 'p-limit'
 import { EmbeddingModel } from '../core/types'
 
 export interface GeminiConfig {
@@ -6,6 +7,7 @@ export interface GeminiConfig {
   model?: string
   batchSize?: number
   rateLimitDelayMs?: number
+  concurrency?: number
 }
 
 /**
@@ -18,12 +20,14 @@ export class GeminiEmbedding implements EmbeddingModel {
   private client: GoogleGenerativeAI
   private batchSize: number
   private rateLimitDelayMs: number
+  private concurrency: number
 
   constructor(config: GeminiConfig) {
     this.client = new GoogleGenerativeAI(config.apiKey)
     this.model = config.model || 'text-embedding-004'
     this.batchSize = config.batchSize || 100
     this.rateLimitDelayMs = config.rateLimitDelayMs || 100
+    this.concurrency = config.concurrency || 10
   }
 
   async embed(text: string): Promise<Float32Array> {
@@ -42,25 +46,22 @@ export class GeminiEmbedding implements EmbeddingModel {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const embeddings: Float32Array[] = []
+    // Use p-limit for parallel processing with controlled concurrency
+    const limit = pLimit(this.concurrency)
 
-    // Process in batches to respect rate limits
-    for (let i = 0; i < texts.length; i += this.batchSize) {
-      const batch = texts.slice(i, i + this.batchSize)
-
-      // Process batch sequentially with delay
-      for (const text of batch) {
+    const tasks = texts.map((text, index) =>
+      limit(async () => {
         const embedding = await this.embed(text)
-        embeddings.push(embedding)
+        return { index, embedding }
+      })
+    )
 
-        // Rate limit delay between requests
-        if (this.rateLimitDelayMs > 0) {
-          await this.sleep(this.rateLimitDelayMs)
-        }
-      }
-    }
+    const results = await Promise.all(tasks)
 
-    return embeddings
+    // Sort by original index to maintain order
+    results.sort((a, b) => a.index - b.index)
+
+    return results.map(r => r.embedding)
   }
 
   private sleep(ms: number): Promise<void> {

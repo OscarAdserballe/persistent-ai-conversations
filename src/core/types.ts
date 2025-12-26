@@ -3,6 +3,38 @@
  */
 
 // ============================================================================
+// PDF Parser
+// ============================================================================
+
+/**
+ * Parses PDF files and extracts text content.
+ * Implementations: PdfParseParser
+ */
+export interface PDFParser {
+  /**
+   * Parse a PDF file and extract text content.
+   * @param filePath - Path to PDF file
+   * @returns Parsed PDF document with text and metadata
+   */
+  parse(filePath: string): Promise<ParsedPDF>;
+}
+
+export interface ParsedPDF {
+  filename: string;
+  title?: string;
+  pageCount: number;
+  text: string;
+  pages: PDFPage[];
+  metadata: Record<string, unknown>;
+}
+
+export interface PDFPage {
+  pageNumber: number;
+  text: string;
+  charCount: number;
+}
+
+// ============================================================================
 // Embedding Model
 // ============================================================================
 
@@ -161,7 +193,53 @@ export interface SearchOptions {
 }
 
 // ============================================================================
-// Learning Extraction (Simplified Learning Artifact Schema)
+// Topic Extraction (PDF → Topics)
+// ============================================================================
+
+/**
+ * Extracts topics from PDF documents using LLM.
+ * Stores topics with embeddings for later search.
+ */
+export interface TopicExtractor {
+  /**
+   * Extract topics from a stored PDF document.
+   * @param pdfId - UUID of the PDF document in database
+   * @param options - Optional metadata for telemetry/experiments
+   * @returns Array of extracted topics
+   */
+  extractFromPDF(
+    pdfId: string,
+    options?: TopicExtractionOptions
+  ): Promise<Topic[]>;
+}
+
+export interface TopicExtractionOptions {
+  experimentId?: string;
+  promptVersion?: string;
+  modelId?: string;
+  /** If true, delete existing topics and re-extract */
+  overwrite?: boolean;
+}
+
+/**
+ * A topic extracted from a PDF document.
+ */
+export interface Topic {
+  topicId: string;
+  title: string;
+  summary: string;
+  keyPoints: string[];
+  sourcePassages?: string[];
+  sourceText?: string;
+  pdfId: string;
+  parentTopicId?: string;
+  depth: number;
+  createdAt: Date;
+  embedding?: Float32Array;
+}
+
+// ============================================================================
+// Learning Extraction (Block-based Schema for Flashcards)
 // ============================================================================
 
 /**
@@ -181,6 +259,22 @@ export interface LearningExtractor {
   ): Promise<Learning[]>;
 }
 
+/**
+ * Extracts learnings from topics (extracted from PDFs).
+ */
+export interface TopicLearningExtractor {
+  /**
+   * Extract learnings from a single topic.
+   * @param topic - Topic with summary and key points
+   * @param options - Optional metadata for telemetry/experiments
+   * @returns Array of extracted learnings (0-N per topic)
+   */
+  extractFromTopic(
+    topic: Topic,
+    options?: LearningExtractionOptions
+  ): Promise<Learning[]>;
+}
+
 export interface LearningExtractionOptions {
   experimentId?: string;
   promptVersion?: string;
@@ -188,29 +282,38 @@ export interface LearningExtractionOptions {
 }
 
 /**
- * A FAQ item - question/answer pair from the conversation
+ * Block types for flashcard content.
+ * - 'qa': Generic question/answer (definitions, procedures, proofs, formulas)
+ * - 'why': Elaborative interrogation ("Why is X true?")
+ * - 'contrast': Compare/contrast two concepts
  */
-export interface FAQItem {
-  question: string; // The skepticism or clarification asked
-  answer: string; // The resolution
+export type ContentBlockType = "qa" | "why" | "contrast";
+
+/**
+ * A content block - a single Q&A pair that becomes a flashcard.
+ */
+export interface ContentBlock {
+  blockType: ContentBlockType;
+  question: string; // Front of flashcard
+  answer: string; // Back of flashcard
 }
 
 /**
- * A distilled learning extracted from conversations.
- * Simplified "Learning Artifact" structure for better recall.
+ * A distilled learning - the universal knowledge unit.
+ * Can be extracted from conversations or topics (from PDFs).
  */
 export interface Learning {
   learningId: string; // Unique learning ID (UUID)
 
   // Core learning capture
   title: string; // Descriptive title - highly specific for recall
-  trigger: string; // Specific problem/blocker that triggered the question
-  insight: string; // Core technical/philosophical realization
-  whyPoints: string[]; // List of reasons why this is the case
-  faq: FAQItem[]; // Q&A pairs synthesized from conversation
+  problemSpace: string; // "When/why does this matter?" - the situation making this relevant
+  insight: string; // Core technical/philosophical realization (1-2 sentences)
+  blocks: ContentBlock[]; // 0-N flashcard-ready Q&A pairs
 
-  // Source tracking
-  conversationUuid?: string; // Source conversation
+  // Polymorphic source tracking (no FK - accepts orphan risk)
+  sourceType: "conversation" | "topic";
+  sourceId: string; // conversationUuid or topicId
 
   // Metadata
   createdAt: Date;
@@ -246,11 +349,17 @@ export interface LearningSearchOptions {
 export interface LearningSearchResult {
   learning: Learning; // The matched learning
   score: number; // Similarity score (0-1)
+  // Source metadata - one of these will be populated based on sourceType
   sourceConversation?: {
-    // Source conversation metadata
     uuid: string;
     title: string;
     createdAt: Date;
+  };
+  sourceTopic?: {
+    topicId: string;
+    title: string;
+    pdfId: string;
+    pdfTitle?: string;
   };
 }
 

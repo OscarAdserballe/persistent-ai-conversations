@@ -1,8 +1,8 @@
 import pLimit from "p-limit";
 import { DrizzleDB } from "../db/client";
-import { learnings as learningsTable } from "../db/schema";
-import { eq, sql, desc, count } from "drizzle-orm";
-import type { Learning, LearningExtractor } from "../core/types";
+import { learnings as learningsTable, learningReviews as reviewsTable } from "../db/schema";
+import { eq, sql, desc, count, and } from "drizzle-orm";
+import type { Learning, LearningExtractor, ContentBlock } from "../core/types";
 import { getConversationByUuid } from "./conversations";
 
 /**
@@ -12,11 +12,11 @@ function mapRowToLearning(row: typeof learningsTable.$inferSelect): Learning {
   return {
     learningId: row.learningId,
     title: row.title,
-    trigger: row.trigger,
+    problemSpace: row.problemSpace,
     insight: row.insight,
-    whyPoints: row.whyPoints,
-    faq: row.faq,
-    conversationUuid: row.conversationUuid ?? undefined,
+    blocks: row.blocks as ContentBlock[],
+    sourceType: row.sourceType,
+    sourceId: row.sourceId,
     createdAt: row.createdAt,
     embedding: row.embedding
       ? new Float32Array(row.embedding.buffer)
@@ -85,11 +85,16 @@ export async function extractLearnings(
 
   const promises = conversationUuids.map((uuid) =>
     limit(async () => {
-      // Check if already processed
+      // Check if already processed (sourceType='conversation', sourceId=uuid)
       const existing = db
         .select()
         .from(learningsTable)
-        .where(eq(learningsTable.conversationUuid, uuid))
+        .where(
+          and(
+            eq(learningsTable.sourceType, "conversation"),
+            eq(learningsTable.sourceId, uuid)
+          )
+        )
         .all();
 
       if (existing.length > 0 && !overwrite) {
@@ -100,7 +105,12 @@ export async function extractLearnings(
 
       if (existing.length > 0 && overwrite) {
         db.delete(learningsTable)
-          .where(eq(learningsTable.conversationUuid, uuid))
+          .where(
+            and(
+              eq(learningsTable.sourceType, "conversation"),
+              eq(learningsTable.sourceId, uuid)
+            )
+          )
           .run();
       }
 
@@ -127,6 +137,7 @@ export async function extractLearnings(
 export interface GetLearningsOptions {
   limit?: number;
   offset?: number;
+  sourceType?: "conversation" | "topic";
 }
 
 /**
@@ -145,17 +156,26 @@ export function getLearnings(
   db: DrizzleDB,
   options: GetLearningsOptions = {}
 ): GetLearningsResult {
-  const { limit: limitVal = 20, offset = 0 } = options;
+  const { limit: limitVal = 20, offset = 0, sourceType } = options;
 
-  const rows = db
+  let query = db
     .select()
     .from(learningsTable)
     .orderBy(desc(learningsTable.createdAt))
     .limit(limitVal)
-    .offset(offset)
-    .all();
+    .offset(offset);
 
-  const totalResult = db.select({ count: count() }).from(learningsTable).get();
+  if (sourceType) {
+    query = query.where(eq(learningsTable.sourceType, sourceType)) as typeof query;
+  }
+
+  const rows = query.all();
+
+  let countQuery = db.select({ count: count() }).from(learningsTable);
+  if (sourceType) {
+    countQuery = countQuery.where(eq(learningsTable.sourceType, sourceType)) as typeof countQuery;
+  }
+  const totalResult = countQuery.get();
 
   const total = totalResult?.count ?? 0;
 
@@ -202,16 +222,22 @@ export function getLearningById(
 }
 
 /**
- * Get all learnings for a specific conversation.
+ * Get all learnings for a specific source.
  */
-export function getLearningsByConversation(
+export function getLearningsBySource(
   db: DrizzleDB,
-  conversationUuid: string
+  sourceType: "conversation" | "topic",
+  sourceId: string
 ): Learning[] {
   const rows = db
     .select()
     .from(learningsTable)
-    .where(eq(learningsTable.conversationUuid, conversationUuid))
+    .where(
+      and(
+        eq(learningsTable.sourceType, sourceType),
+        eq(learningsTable.sourceId, sourceId)
+      )
+    )
     .orderBy(desc(learningsTable.createdAt))
     .all();
 
@@ -219,29 +245,78 @@ export function getLearningsByConversation(
 }
 
 /**
- * Check if a conversation has existing learnings.
+ * Check if a source has existing learnings.
  */
-export function hasLearnings(db: DrizzleDB, conversationUuid: string): boolean {
+export function hasLearnings(
+  db: DrizzleDB,
+  sourceType: "conversation" | "topic",
+  sourceId: string
+): boolean {
   const result = db
     .select({ count: count() })
     .from(learningsTable)
-    .where(eq(learningsTable.conversationUuid, conversationUuid))
+    .where(
+      and(
+        eq(learningsTable.sourceType, sourceType),
+        eq(learningsTable.sourceId, sourceId)
+      )
+    )
     .get();
 
   return (result?.count ?? 0) > 0;
 }
 
 /**
- * Delete all learnings for a conversation.
+ * Delete all learnings for a source.
  */
-export function deleteLearningsByConversation(
+export function deleteLearningsBySource(
   db: DrizzleDB,
-  conversationUuid: string
+  sourceType: "conversation" | "topic",
+  sourceId: string
 ): number {
   const result = db
     .delete(learningsTable)
-    .where(eq(learningsTable.conversationUuid, conversationUuid))
+    .where(
+      and(
+        eq(learningsTable.sourceType, sourceType),
+        eq(learningsTable.sourceId, sourceId)
+      )
+    )
     .run();
 
   return result.changes;
+}
+
+/**
+ * Record a flashcard review rating.
+ */
+export function recordLearningReview(
+  db: DrizzleDB,
+  learningId: string,
+  rating: "forgot" | "hard" | "good" | "easy",
+  blockIndex?: number
+): void {
+  db.insert(reviewsTable)
+    .values({
+      learningId,
+      blockIndex: blockIndex ?? null,
+      rating,
+      reviewedAt: new Date(),
+    })
+    .run();
+}
+
+/**
+ * Get review history for a learning.
+ */
+export function getLearningReviews(
+  db: DrizzleDB,
+  learningId: string
+) {
+  return db
+    .select()
+    .from(reviewsTable)
+    .where(eq(reviewsTable.learningId, learningId))
+    .orderBy(desc(reviewsTable.reviewedAt))
+    .all();
 }

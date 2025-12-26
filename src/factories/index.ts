@@ -8,6 +8,8 @@ import {
   ConversationImporter,
   LearningExtractor,
   LearningSearch,
+  TopicExtractor,
+  TopicLearningExtractor,
 } from "../core/types";
 import { GeminiEmbedding } from "../embeddings/gemini";
 import { SqliteVectorStore } from "../db/vector-store";
@@ -15,6 +17,8 @@ import { SemanticSearch } from "../search/semantic";
 import { ClaudeImporter } from "../importers/claude";
 import { LearningExtractorImpl } from "../services/learning-extractor";
 import { LearningSearchImpl } from "../services/learning-search";
+import { TopicExtractorImpl } from "../services/topic-extractor";
+import { TopicLearningExtractorImpl } from "../services/topic-learning-extractor";
 import { createDrizzleDb, getRawDb, DrizzleDB } from "../db/client";
 import { MockEmbeddingModel } from "../mocks";
 import { mkdirSync } from "fs";
@@ -243,4 +247,54 @@ export function createLearningSearch(
 
   // Pass DrizzleDB directly - service uses type-safe queries now!
   return new LearningSearchImpl(embedder, vectorStore, database);
+}
+
+/**
+ * Factory for creating topic extractor.
+ * Extracts topics from PDF documents using LLM.
+ */
+export function createTopicExtractor(
+  config: Config,
+  db?: DrizzleDB,
+  promptTemplate?: string
+): TopicExtractor {
+  const database = db || createDatabase(config.db.path);
+  const embedder = createEmbeddingModel(config);
+
+  // Create Vercel AI SDK model instance
+  const modelName = config.llm.model;
+  const llm = getModel(modelName);
+
+  if (!promptTemplate) {
+    throw new Error(
+      "createTopicExtractor requires a prompt template. Fetch it (e.g., via getLangfusePrompt) before calling this factory."
+    );
+  }
+
+  return new TopicExtractorImpl(llm, embedder, database, promptTemplate);
+}
+
+/**
+ * Factory for creating topic learning extractor.
+ * Extracts learnings from topics (which come from PDFs).
+ */
+export function createTopicLearningExtractor(
+  config: Config,
+  db?: DrizzleDB,
+  promptTemplate?: string
+): TopicLearningExtractor {
+  const database = db || createDatabase(config.db.path);
+  const embedder = createEmbeddingModel(config);
+
+  // Create Vercel AI SDK model instance
+  const modelName = config.llm.model;
+  const llm = getModel(modelName);
+
+  if (!promptTemplate) {
+    throw new Error(
+      "createTopicLearningExtractor requires a prompt template. Fetch it (e.g., via getLangfusePrompt) before calling this factory."
+    );
+  }
+
+  return new TopicLearningExtractorImpl(llm, embedder, database, promptTemplate);
 }

@@ -100,12 +100,12 @@ describe("Learning Extraction Pipeline", () => {
   it("should extract and store learnings end-to-end", async () => {
     const conversation = createTestConversation();
 
-    // Configure LLM to return a learning with simplified schema
+    // Configure LLM to return a learning with new block-based schema
     queueLLMResponse(
       createMockLearnings([
         {
           title: "TypeScript Introduction",
-          trigger: "Understanding TypeScript basics",
+          problemSpace: "Understanding TypeScript basics",
           insight: "TypeScript adds type safety to JavaScript",
         },
       ])
@@ -134,7 +134,7 @@ describe("Learning Extraction Pipeline", () => {
     // Verify learnings were returned
     expect(learnings).toHaveLength(1);
     expect(learnings[0].title).toBe("TypeScript Introduction");
-    expect(learnings[0].trigger).toBe("Understanding TypeScript basics");
+    expect(learnings[0].problemSpace).toBe("Understanding TypeScript basics");
     expect(learnings[0].insight).toBe(
       "TypeScript adds type safety to JavaScript"
     );
@@ -146,64 +146,22 @@ describe("Learning Extraction Pipeline", () => {
     expect(storedLearnings).toHaveLength(1);
     expect(storedLearnings[0].title).toBe("TypeScript Introduction");
 
-    // Verify conversation link
-    expect(storedLearnings[0].conversation_uuid).toBe("test-conv-1");
+    // Verify source link
+    expect(storedLearnings[0].source_type).toBe("conversation");
+    expect(storedLearnings[0].source_id).toBe("test-conv-1");
   });
 
-  it("should store why_points as JSON array", async () => {
+  it("should store blocks as JSON array", async () => {
     const conversation = createTestConversation();
 
     queueLLMResponse(
       createMockLearnings([
         {
           title: "Test Learning",
-          why_points: ["reason1", "reason2", "reason3"],
-        },
-      ])
-    );
-
-    // Insert conversation
-    getRawDb(drizzleDb)
-      .prepare(
-        `
-      INSERT INTO conversations (uuid, name, created_at, updated_at, platform, message_count)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `
-      )
-      .run(
-        conversation.uuid,
-        conversation.title,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        conversation.platform,
-        conversation.messages.length
-      );
-
-    // Extract
-    const learnings = await extractor.extractFromConversation(conversation);
-
-    // Verify whyPoints in returned learning
-    expect(learnings[0].whyPoints).toHaveLength(3);
-    expect(learnings[0].whyPoints).toContain("reason1");
-
-    // Verify why_points in database
-    const storedLearnings = getRawDb(drizzleDb)
-      .prepare("SELECT why_points FROM learnings")
-      .all() as any[];
-    const whyPoints = JSON.parse(storedLearnings[0].why_points);
-    expect(whyPoints).toHaveLength(3);
-  });
-
-  it("should store faq as JSON array", async () => {
-    const conversation = createTestConversation();
-
-    queueLLMResponse(
-      createMockLearnings([
-        {
-          title: "Test Learning",
-          faq: [
-            { question: "Q1?", answer: "A1" },
-            { question: "Q2?", answer: "A2" },
+          blocks: [
+            { blockType: "qa" as const, question: "Q1?", answer: "A1" },
+            { blockType: "why" as const, question: "Why?", answer: "Because" },
+            { blockType: "contrast" as const, question: "X vs Y?", answer: "Different" },
           ],
         },
       ])
@@ -229,17 +187,16 @@ describe("Learning Extraction Pipeline", () => {
     // Extract
     const learnings = await extractor.extractFromConversation(conversation);
 
-    // Verify faq in returned learning
-    expect(learnings[0].faq).toHaveLength(2);
-    expect(learnings[0].faq[0].question).toBe("Q1?");
-    expect(learnings[0].faq[0].answer).toBe("A1");
+    // Verify blocks in returned learning
+    expect(learnings[0].blocks).toHaveLength(3);
+    expect(learnings[0].blocks[0].blockType).toBe("qa");
 
-    // Verify faq in database
+    // Verify blocks in database
     const storedLearnings = getRawDb(drizzleDb)
-      .prepare("SELECT faq FROM learnings")
+      .prepare("SELECT blocks FROM learnings")
       .all() as any[];
-    const faq = JSON.parse(storedLearnings[0].faq);
-    expect(faq).toHaveLength(2);
+    const blocks = JSON.parse(storedLearnings[0].blocks);
+    expect(blocks).toHaveLength(3);
   });
 
   it("should handle multiple learnings from one conversation", async () => {
@@ -359,7 +316,7 @@ describe("Learning Extraction Pipeline", () => {
     expect(embedder.lastTexts[2]).toContain("Learning 3");
   });
 
-  it("should link to source conversation", async () => {
+  it("should set sourceType and sourceId for conversation source", async () => {
     const conversation = createTestConversation();
 
     queueLLMResponse(
@@ -391,13 +348,15 @@ describe("Learning Extraction Pipeline", () => {
     const learnings = await extractor.extractFromConversation(conversation);
 
     // Verify source link in returned learning
-    expect(learnings[0].conversationUuid).toBe("test-conv-1");
+    expect(learnings[0].sourceType).toBe("conversation");
+    expect(learnings[0].sourceId).toBe("test-conv-1");
 
     // Verify stored in database
     const storedLearnings = getRawDb(drizzleDb)
-      .prepare("SELECT conversation_uuid FROM learnings")
+      .prepare("SELECT source_type, source_id FROM learnings")
       .all() as any[];
-    expect(storedLearnings[0].conversation_uuid).toBe("test-conv-1");
+    expect(storedLearnings[0].source_type).toBe("conversation");
+    expect(storedLearnings[0].source_id).toBe("test-conv-1");
   });
 
   it("should handle empty learnings response", async () => {

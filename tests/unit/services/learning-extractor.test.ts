@@ -57,16 +57,16 @@ describe("LearningExtractorImpl", () => {
     drizzleDb = createDrizzleDb(":memory:");
     const rawDb = getRawDb(drizzleDb);
 
-    // Create minimal schema for tests (simplified Learning Artifact schema)
+    // Create schema with new block-based Learning structure
     rawDb.exec(`
       CREATE TABLE learnings (
         learning_id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        trigger TEXT NOT NULL,
+        problem_space TEXT NOT NULL,
         insight TEXT NOT NULL,
-        why_points TEXT NOT NULL,
-        faq TEXT NOT NULL,
-        conversation_uuid TEXT,
+        blocks TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
         embedding BLOB NOT NULL,
         created_at INTEGER NOT NULL
       );
@@ -102,13 +102,13 @@ describe("LearningExtractorImpl", () => {
 
   describe("extractFromConversation", () => {
     it("should extract learnings from conversation", async () => {
-      // Configure LLM to return a valid learning with simplified schema
+      // Configure LLM to return a valid learning with new schema
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
         object: createMockLearnings([
           {
             title: "TypeScript Introduction",
-            trigger: "Understanding TypeScript basics",
+            problemSpace: "Understanding TypeScript basics",
             insight: "TypeScript adds type safety to JavaScript",
           },
         ]),
@@ -120,11 +120,12 @@ describe("LearningExtractorImpl", () => {
 
       expect(learnings).toHaveLength(1);
       expect(learnings[0].title).toBe("TypeScript Introduction");
-      expect(learnings[0].trigger).toBe("Understanding TypeScript basics");
+      expect(learnings[0].problemSpace).toBe("Understanding TypeScript basics");
       expect(learnings[0].insight).toBe(
         "TypeScript adds type safety to JavaScript"
       );
-      expect(learnings[0].conversationUuid).toBe("conv-123");
+      expect(learnings[0].sourceType).toBe("conversation");
+      expect(learnings[0].sourceId).toBe("conv-123");
     });
 
     it("should return empty array when LLM returns empty", async () => {
@@ -230,12 +231,12 @@ describe("LearningExtractorImpl", () => {
         .all() as any[];
       expect(stored).toHaveLength(1);
       expect(stored[0].title).toBe("Database Test");
-      // why_points should be JSON
-      const whyPoints = JSON.parse(stored[0].why_points);
-      expect(Array.isArray(whyPoints)).toBe(true);
+      // blocks should be JSON
+      const blocks = JSON.parse(stored[0].blocks);
+      expect(Array.isArray(blocks)).toBe(true);
     });
 
-    it("should link learnings to source conversation", async () => {
+    it("should set sourceType and sourceId for conversation source", async () => {
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
         object: createMockLearnings([
@@ -248,10 +249,11 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       const stored = getRawDb(drizzleDb)
-        .prepare("SELECT conversation_uuid FROM learnings")
+        .prepare("SELECT source_type, source_id FROM learnings")
         .all() as any[];
       expect(stored).toHaveLength(1);
-      expect(stored[0].conversation_uuid).toBe("conv-123");
+      expect(stored[0].source_type).toBe("conversation");
+      expect(stored[0].source_id).toBe("conv-123");
     });
 
     it("should generate UUID for learnings", async () => {
@@ -278,37 +280,17 @@ describe("LearningExtractorImpl", () => {
     });
   });
 
-  describe("why_points and faq management", () => {
-    it("should handle multiple why_points per learning", async () => {
+  describe("blocks management", () => {
+    it("should handle multiple blocks per learning", async () => {
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
         object: createMockLearnings([
           {
             title: "Test",
-            why_points: ["reason1", "reason2", "reason3"],
-          },
-        ]),
-      });
-
-      const learnings = await extractor.extractFromConversation(
-        mockConversation
-      );
-
-      expect(learnings[0].whyPoints).toHaveLength(3);
-      expect(learnings[0].whyPoints).toContain("reason1");
-      expect(learnings[0].whyPoints).toContain("reason2");
-      expect(learnings[0].whyPoints).toContain("reason3");
-    });
-
-    it("should handle multiple faq items per learning", async () => {
-      const generateObjectMock = vi.mocked(generateObject);
-      generateObjectMock.mockResolvedValueOnce({
-        object: createMockLearnings([
-          {
-            title: "Test",
-            faq: [
-              { question: "Q1?", answer: "A1" },
-              { question: "Q2?", answer: "A2" },
+            blocks: [
+              { blockType: "qa" as const, question: "Q1?", answer: "A1" },
+              { blockType: "why" as const, question: "Why?", answer: "Because" },
+              { blockType: "contrast" as const, question: "X vs Y?", answer: "Difference" },
             ],
           },
         ]),
@@ -318,18 +300,21 @@ describe("LearningExtractorImpl", () => {
         mockConversation
       );
 
-      expect(learnings[0].faq).toHaveLength(2);
-      expect(learnings[0].faq[0].question).toBe("Q1?");
-      expect(learnings[0].faq[0].answer).toBe("A1");
+      expect(learnings[0].blocks).toHaveLength(3);
+      expect(learnings[0].blocks[0].blockType).toBe("qa");
+      expect(learnings[0].blocks[1].blockType).toBe("why");
+      expect(learnings[0].blocks[2].blockType).toBe("contrast");
     });
 
-    it("should store why_points as JSON in database", async () => {
+    it("should store blocks as JSON in database", async () => {
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
         object: createMockLearnings([
           {
             title: "Test",
-            why_points: ["test-reason"],
+            blocks: [
+              { blockType: "qa" as const, question: "Test Q?", answer: "Test A" },
+            ],
           },
         ]),
       });
@@ -337,31 +322,31 @@ describe("LearningExtractorImpl", () => {
       await extractor.extractFromConversation(mockConversation);
 
       const stored = getRawDb(drizzleDb)
-        .prepare("SELECT why_points FROM learnings")
+        .prepare("SELECT blocks FROM learnings")
         .all() as any[];
-      const whyPoints = JSON.parse(stored[0].why_points);
-      expect(whyPoints).toContain("test-reason");
+      const blocks = JSON.parse(stored[0].blocks);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].question).toBe("Test Q?");
     });
 
-    it("should store faq as JSON in database", async () => {
+    it("should handle empty blocks array", async () => {
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
-        object: createMockLearnings([
+        object: [
           {
             title: "Test",
-            faq: [{ question: "Q?", answer: "A" }],
+            problemSpace: "Test problem",
+            insight: "Test insight",
+            blocks: [],
           },
-        ]),
+        ],
       });
 
-      await extractor.extractFromConversation(mockConversation);
+      const learnings = await extractor.extractFromConversation(
+        mockConversation
+      );
 
-      const stored = getRawDb(drizzleDb)
-        .prepare("SELECT faq FROM learnings")
-        .all() as any[];
-      const faq = JSON.parse(stored[0].faq);
-      expect(faq).toHaveLength(1);
-      expect(faq[0].question).toBe("Q?");
+      expect(learnings[0].blocks).toEqual([]);
     });
   });
 
@@ -544,23 +529,32 @@ describe("LearningExtractorImpl", () => {
       expect(learnings[0].insight).toBe(longInsight);
     });
 
-    it("should handle many why_points per learning", async () => {
-      const manyReasons = Array(20)
+    it("should handle many blocks per learning", async () => {
+      const manyBlocks = Array(20)
         .fill(null)
-        .map((_, i) => `reason-${i}`);
+        .map((_, i) => ({
+          blockType: "qa" as const,
+          question: `Q${i}?`,
+          answer: `A${i}`,
+        }));
 
       const generateObjectMock = vi.mocked(generateObject);
       generateObjectMock.mockResolvedValueOnce({
-        object: createMockLearnings([
-          { title: "Test", why_points: manyReasons },
-        ]),
+        object: [
+          {
+            title: "Test",
+            problemSpace: "Test problem",
+            insight: "Test insight",
+            blocks: manyBlocks,
+          },
+        ],
       });
 
       const learnings = await extractor.extractFromConversation(
         mockConversation
       );
 
-      expect(learnings[0].whyPoints).toHaveLength(20);
+      expect(learnings[0].blocks).toHaveLength(20);
     });
   });
 });

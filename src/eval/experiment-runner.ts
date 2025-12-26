@@ -7,7 +7,7 @@ import { LearningExtractorImpl } from "../services/learning-extractor";
 import { createEmbeddingModel } from "../factories";
 import { getModel } from "../llm/client";
 import { getConversationByUuid } from "../api/conversations";
-import { deleteLearningsByConversation } from "../api/learnings";
+import { deleteLearningsBySource } from "../api/learnings";
 import type {
   EvalConfig,
   ExperimentConfig,
@@ -134,7 +134,7 @@ export class ExperimentRunner {
           this.db,
           input.conversationUuid
         );
-        deleteLearningsByConversation(this.db, conversation.uuid);
+        deleteLearningsBySource(this.db, "conversation", conversation.uuid);
 
         const learnings = await extractor.extractFromConversation(
           conversation,
@@ -148,10 +148,9 @@ export class ExperimentRunner {
         const learningsOutput: LearningOutput[] = learnings.map((l) => ({
           learningId: l.learningId,
           title: l.title,
-          trigger: l.trigger,
+          problemSpace: l.problemSpace,
           insight: l.insight,
-          whyPoints: l.whyPoints,
-          faq: l.faq,
+          blocks: l.blocks,
         }));
 
         return {
